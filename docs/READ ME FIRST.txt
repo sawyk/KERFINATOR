@@ -1,0 +1,68 @@
+KERFINATOR — offline game library
+Down with Deutsch.
+=====================================================================
+
+PLAYING (anyone)
+----------------
+1. Plug in the USB drive and open the KERFINATOR folder.
+2. Double-click KERFINATOR.html. It opens in your web browser
+   (Microsoft Edge or Google Chrome work best).
+3. The games on the drive install into the browser by themselves.
+   A progress bar at the top shows this. It only happens once per
+   computer.
+4. Click a game to play. It opens in its own tab. Press F11 for
+   fullscreen. Close the tab when you're done.
+
+KEEP PLAYING WITHOUT THE USB
+----------------------------
+Your games and saves are stored inside the browser on this computer,
+not on the USB. To start KERFINATOR without the drive:
+
+  In KERFINATOR, select "Save to this computer" (in the red bar at the
+  top, or under System). Save KERFINATOR.html to your Desktop.
+  Next time, open that file. The USB can stay at home.
+
+You can also simply copy KERFINATOR.html from the USB to your Desktop.
+
+ADDING GAMES ON YOUR OWN
+------------------------
+Open the Import tab and drag a game folder, a .zip file or an .html
+file onto it (or use the buttons). KERFINATOR finds the start page and
+cover, lets you fix the title, and stores the game in the browser.
+Imported games work without the USB.
+
+Only HTML5 games run. Flash (.swf), Windows programs (.exe) and
+.rar/.7z archives can't run in a browser.
+
+PREPARING A USB DRIVE (for whoever maintains the drive)
+-------------------------------------------------------
+1. Copy this whole KERFINATOR folder to the USB drive.
+   Keep it in a folder; don't spread the files over the drive's root.
+2. Put each game in its own folder inside KERFINATOR/games.
+   Example:  KERFINATOR/games/my-game/index.html
+3. Open KERFINATOR.html in Edge or Chrome, go to System, and select
+   "Build USB library". Choose the KERFINATOR folder on the USB and
+   allow editing when the browser asks.
+4. Do this again whenever you add, change or remove games.
+
+The build writes the games into KERFINATOR/library in a form the
+launcher can install automatically. Don't edit that folder by hand.
+
+Optional: put a kerf.json file in a game's folder to set its details:
+  { "title": "My Game", "entry": "index.html", "cover": "cover.png" }
+
+WHAT TO KNOW
+------------
+- Nothing is installed on the computer and no admin rights are needed.
+  KERFINATOR never connects to the internet.
+- Each browser has its own library: Edge and Chrome don't share one, and
+  neither do different Windows accounts or browser profiles.
+- Clearing the browser's "site data", or using a private/InPrivate/guest
+  window, deletes the library. Use System > Export backup to keep your
+  saves safe. A backup can be restored on any computer.
+- Games share the browser's storage space. System shows how much is used.
+- A few games can't run offline from a file: games that need online
+  services, and some multi-threaded Godot 4 / Unity builds that require
+  a web server. KERFINATOR tells you when this happens.
+- Games run in your browser like any web page. Only import games from
+  sources you trust.

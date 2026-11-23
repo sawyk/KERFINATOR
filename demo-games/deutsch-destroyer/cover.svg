@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b0c0e"/><stop offset="1" stop-color="#140507"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="6"/></filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0v32" fill="none" stroke="#16181c"/></pattern>
+  </defs>
+  <rect width="640" height="480" fill="url(#bg)"/><rect width="640" height="480" fill="url(#grid)"/>
+  <g font-family="Segoe UI, system-ui, sans-serif" font-weight="700" fill="#8b929c" opacity=".55">
+    <text x="60" y="90" font-size="30">Hausaufgaben</text><text x="380" y="140" font-size="26">Grammatik</text>
+    <text x="150" y="200" font-size="34" fill="#dfe3e8" opacity="1">Prüfung</text><text x="420" y="250" font-size="24">Wörterbuch</text>
+  </g>
+  <rect x="130" y="166" width="178" height="48" fill="none" stroke="#ff2b3f" stroke-width="2"/>
+  <path d="M320 420 L219 214" stroke="#ff2b3f" stroke-width="10" filter="url(#glow)" opacity=".8"/>
+  <path d="M320 420 L219 214" stroke="#ffd6da" stroke-width="3"/>
+  <circle cx="219" cy="206" r="40" fill="#ff2b3f" filter="url(#glow)" opacity=".6"/>
+  <rect x="40" y="400" width="104" height="8" fill="#c8102e"/><rect x="152" y="400" width="104" height="8" fill="#c8102e"/><rect x="384" y="400" width="104" height="8" fill="#c8102e"/><rect x="496" y="400" width="104" height="8" fill="#2a2d33"/>
+  <rect x="300" y="420" width="40" height="60" fill="#1b1d21"/><rect x="314" y="410" width="12" height="14" fill="#ff2b3f"/>
+  <text x="40" y="330" font-family="Segoe UI, system-ui, sans-serif" font-weight="800" font-size="54" letter-spacing="6" fill="#f4f6f8">DEUTSCH</text>
+  <text x="40" y="378" font-family="Segoe UI, system-ui, sans-serif" font-weight="800" font-size="40" letter-spacing="10" fill="#ff2b3f">DESTROYER</text>
+</svg>

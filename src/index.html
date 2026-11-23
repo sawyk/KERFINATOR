@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="KERFINATOR — offline HTML5 game library. Down with Deutsch.">
+<title>KERFINATOR</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050506'/%3E%3Cpath d='M4 13h24v6H4z' fill='%231b1d21'/%3E%3Ccircle cx='21' cy='16' r='3.4' fill='%23ff2b3f'/%3E%3C/svg%3E">
+<script>if (/[?&]play=/.test(location.search)) document.documentElement.className = 'k-play';</script>
+<style>
+/*@CSS*/
+</style>
+</head>
+<body>
+<div id="player-screen" aria-live="polite">
+  <div class="ps-mark"><span class="optic" aria-hidden="true"></span><span class="wordmark">KERFINATOR</span></div>
+  <h1 id="ps-title">Loading</h1>
+  <p id="ps-status"></p>
+  <a id="ps-open" class="btn" hidden>Open KERFINATOR</a>
+</div>
+
+<div id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="optic is-boot" aria-hidden="true"></span>
+      <span class="wordmark">KERFINATOR</span>
+      <span class="slogan">Down with Deutsch</span>
+    </div>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab is-active" data-view="library" aria-current="page">Library</button>
+      <button class="tab" data-view="import">Import</button>
+      <button class="tab" data-view="system">System</button>
+    </nav>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
+      <input id="search" type="search" placeholder="Search games" autocomplete="off" spellcheck="false" aria-label="Search games">
+      <kbd aria-hidden="true">/</kbd>
+    </label>
+  </header>
+
+  <div id="strip" class="strip" hidden></div>
+  <div id="install" class="install" hidden>
+    <div class="install-text"><span id="install-label"></span><span id="install-pct"></span></div>
+    <div class="bar"><i id="install-bar"></i></div>
+  </div>
+
+  <main>
+    <!-- LIBRARY -->
+    <section id="view-library" class="view">
+      <section id="recent" class="shelf" hidden>
+        <div class="shelf-head"><h2>Recently played</h2></div>
+        <div id="recent-row" class="row"></div>
+      </section>
+      <section class="shelf">
+        <div class="shelf-head">
+          <h2 id="grid-title">All games</h2>
+          <span id="count" class="count"></span>
+          <div class="shelf-tools">
+            <div class="seg" role="group" aria-label="Show">
+              <button data-filter="all" aria-pressed="true">All</button>
+              <button data-filter="fav" aria-pressed="false">Favorites</button>
+            </div>
+            <label class="select"><span class="sr">Sort by</span>
+              <select id="sort">
+                <option value="title">Title</option>
+                <option value="recent">Recently played</option>
+                <option value="added">Recently added</option>
+                <option value="play">Most played</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="grid" class="grid"></div>
+        <div id="empty" class="empty" hidden></div>
+      </section>
+    </section>
+
+    <!-- IMPORT -->
+    <section id="view-import" class="view" hidden>
+      <div id="dropzone" class="dropzone" tabindex="-1">
+        <div class="dz-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M8 30v10h32V30"/><path d="M24 8v24"/><path d="m15 23 9 9 9-9"/></svg></div>
+        <h2>Drop games here</h2>
+        <p>Game folders, <b>.zip</b> archives or single <b>.html</b> files. Several at once is fine.</p>
+        <div class="dz-actions">
+          <button id="pick-folder" class="btn btn-primary">Choose a game folder</button>
+          <button id="pick-files" class="btn">Choose .zip or .html files</button>
+        </div>
+        <p class="dz-note">HTML5 games only. Flash (.swf), Windows programs (.exe) and .rar/.7z archives can't run in a browser.</p>
+        <input id="in-folder" type="file" webkitdirectory multiple hidden>
+        <input id="in-files" type="file" multiple accept=".zip,.html,.htm,application/zip,text/html" hidden>
+      </div>
+      <p id="import-status" class="import-status" role="status"></p>
+      <div id="import-list" class="import-list"></div>
+      <div id="import-actions" class="import-actions" hidden>
+        <button id="import-all" class="btn btn-primary">Add all ready games</button>
+        <button id="import-clear" class="btn btn-quiet">Clear finished</button>
+      </div>
+    </section>
+
+    <!-- SYSTEM -->
+    <section id="view-system" class="view" hidden>
+      <div class="sys-grid">
+        <section class="panel">
+          <h2>Storage on this computer</h2>
+          <p>Your games, favorites, playtime and saves live inside this browser on this computer, not on the USB drive. Other browsers and other Windows accounts have their own separate library.</p>
+          <div class="meter"><i id="quota-bar"></i></div>
+          <p id="quota-text" class="fine"></p>
+          <p id="persist-text" class="fine"></p>
+          <div class="actions"><button id="persist" class="btn">Protect from automatic cleanup</button></div>
+        </section>
+
+        <section class="panel">
+          <h2>Play without the USB drive</h2>
+          <p>Save a copy of KERFINATOR to this computer (for example your Desktop). Open that copy next time: it shows the same library, even with the USB unplugged.</p>
+          <p id="saved-text" class="fine"></p>
+          <div class="actions"><button id="save-launcher" class="btn btn-primary">Save KERFINATOR to this computer</button></div>
+        </section>
+
+        <section class="panel">
+          <h2>USB library</h2>
+          <p id="usb-text">KERFINATOR was opened from a copy without a USB library.</p>
+          <label class="check"><input id="auto-install" type="checkbox" checked> <span>Install new USB games automatically</span></label>
+          <div class="actions"><button id="usb-install" class="btn" disabled>Install USB games now</button></div>
+        </section>
+
+        <section class="panel">
+          <h2>Backup and restore</h2>
+          <p>A backup holds favorites, playtime, custom titles and covers, and every game's save data. It doesn't include the game files: re-import those, or install them again from the USB.</p>
+          <p id="backup-text" class="fine"></p>
+          <div class="actions">
+            <button id="backup" class="btn btn-primary">Export backup</button>
+            <button id="restore" class="btn">Restore a backup…</button>
+            <input id="in-restore" type="file" accept=".json,application/json" hidden>
+          </div>
+        </section>
+
+        <section class="panel panel-wide">
+          <h2>Prepare a USB drive</h2>
+          <ol class="steps">
+            <li>Copy the whole <b>KERFINATOR</b> folder to the USB drive.</li>
+            <li>Put each game in its own folder inside <b>KERFINATOR/games</b>.</li>
+            <li>Select <b>Build USB library</b> and choose the KERFINATOR folder on the USB.</li>
+          </ol>
+          <p class="fine">Building packs every game into <b>KERFINATOR/library</b> so that, on any laptop, KERFINATOR installs them automatically with no clicks. Run it again whenever you add, change or remove games. Optional: a <b>kerf.json</b> file in a game folder sets its title, start page and cover, for example <code>{"title": "My Game", "entry": "index.html", "cover": "cover.png"}</code>.</p>
+          <div class="actions"><button id="build-usb" class="btn btn-primary">Build USB library</button></div>
+          <ol id="build-log" class="log" hidden></ol>
+        </section>
+
+        <section class="panel">
+          <h2>Good to know</h2>
+          <ul class="facts">
+            <li>Works offline in Microsoft Edge, Google Chrome and other Chromium browsers. No installation, no admin rights, nothing leaves this computer.</li>
+            <li>Clearing the browser's site data, or using a private/guest window, deletes the library. Keep a backup.</li>
+            <li>A few games need web-server-only features (such as multi-threaded Godot 4 or Unity builds) or online services. KERFINATOR tells you when a game hits one of these limits.</li>
+            <li>Games run in their own tab. Press F11 for fullscreen or use the game's own fullscreen button.</li>
+          </ul>
+        </section>
+
+        <section class="panel panel-danger">
+          <h2>Erase KERFINATOR from this browser</h2>
+          <p>Deletes every game, favorite, playtime record and save stored by KERFINATOR in this browser. Files on the USB drive are not touched.</p>
+          <div class="actions"><button id="erase" class="btn btn-danger">Erase everything…</button></div>
+        </section>
+      </div>
+      <p class="about">KERFINATOR <span id="version"></span>. Down with Deutsch.</p>
+    </section>
+  </main>
+</div>
+
+<!-- Game details -->
+<dialog id="dlg-game" class="dlg dlg-game" aria-labelledby="dg-heading">
+  <form method="dialog" class="dlg-close"><button aria-label="Close">×</button></form>
+  <div class="dg-layout">
+    <div class="dg-cover"><img id="dg-img" alt=""><button id="dg-cover-btn" class="btn btn-small">Change cover</button></div>
+    <div class="dg-body">
+      <h2 id="dg-heading" class="sr">Game details</h2>
+      <label class="field"><span>Title</span><input id="dg-title" type="text" maxlength="100"></label>
+      <dl class="stats">
+        <div><dt>Playtime</dt><dd id="dg-play"></dd></div>
+        <div><dt>Last played</dt><dd id="dg-last"></dd></div>
+        <div><dt>Launches</dt><dd id="dg-launches"></dd></div>
+        <div><dt>Size</dt><dd id="dg-size"></dd></div>
+      </dl>
+      <label class="field"><span>Start page</span><select id="dg-entry"></select></label>
+      <p id="dg-source" class="fine"></p>
+      <div id="dg-diag" class="diag" hidden></div>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button id="dg-play-btn" class="btn btn-primary">Play</button>
+    <button id="dg-fav" class="btn" aria-pressed="false">Add to favorites</button>
+    <span class="spacer"></span>
+    <button id="dg-remove" class="btn btn-danger-quiet">Remove from library…</button>
+  </div>
+</dialog>
+
+<!-- Cover picker -->
+<dialog id="dlg-cover" class="dlg dlg-cover" aria-labelledby="dc-heading">
+  <form method="dialog" class="dlg-close"><button aria-label="Close">×</button></form>
+  <h2 id="dc-heading">Choose a cover</h2>
+  <div id="dc-grid" class="cover-grid"></div>
+  <div class="dlg-foot">
+    <button id="dc-upload" class="btn">Use an image from this computer…</button>
+    <button id="dc-generated" class="btn btn-quiet">Use a generated cover</button>
+    <input id="in-cover" type="file" accept="image/*" hidden>
+  </div>
+</dialog>
+
+<!-- Confirm -->
+<dialog id="dlg-confirm" class="dlg dlg-confirm" aria-labelledby="cf-title">
+  <h2 id="cf-title"></h2>
+  <p id="cf-body"></p>
+  <label id="cf-check-wrap" class="check" hidden><input id="cf-check" type="checkbox"> <span id="cf-check-label"></span></label>
+  <div class="dlg-foot">
+    <span class="spacer"></span>
+    <button id="cf-cancel" class="btn btn-quiet">Cancel</button>
+    <button id="cf-ok" class="btn btn-primary">OK</button>
+  </div>
+</dialog>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script>
+/*@JS*/
+</script>
+</body>
+</html>
