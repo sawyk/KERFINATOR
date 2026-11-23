@@ -177,6 +177,18 @@ Promise.all([new Promise(function (r) { if (im.complete) r(im.naturalWidth > 0);
   /* 6. Single self-contained HTML file */
   w(path.join(root, 'tiny-game.html'), '<!DOCTYPE html><html><head><title>Tiny Single File</title></head><body><canvas></canvas><script>window.__T={single:"ok"};window.__DONE=true;</script></body></html>');
 
+  /* 5a. A game that keeps progress in localStorage and IndexedDB (carry-over test) */
+  w(path.join(root, 'carry-over/index.html'), `<!DOCTYPE html><html><head><title>Carry Over Test</title></head><body><script>
+(async function () {
+  var T = window.__T = {};
+  T.ls = localStorage.getItem('carry.slot');
+  var db = await new Promise(function (res, rej) { var r = indexedDB.open('carrydb', 1); r.onupgradeneeded = function () { r.result.createObjectStore('s'); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; });
+  T.idb = await new Promise(function (res) { var q = db.transaction('s').objectStore('s').get('k'); q.onsuccess = function () { res(q.result === undefined ? null : q.result); }; });
+  window.writeSave = function (v) { localStorage.setItem('carry.slot', v); };
+  window.__DONE = true;
+})();
+</script></body></html>`);
+
   /* 5b. A WebGL game with no cover art (drawing a colourful grid every frame) */
   w(path.join(root, 'webgl-shot/index.html'), `<!DOCTYPE html><html><head><title>WebGL Shot Test</title><style>html,body{margin:0;background:#000}canvas{width:100vw;height:100vh;display:block}</style></head><body><canvas width="640" height="480"></canvas><script>
 var gl = document.querySelector('canvas').getContext('webgl'); gl.enable(gl.SCISSOR_TEST);

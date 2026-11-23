@@ -253,6 +253,8 @@ K.app = (function () {
     if (g.external && g.external.length && !(diag && diag.external && diag.external.length)) lines.push('This game references online files (' + g.external.slice(0, 2).join(', ') + '). Parts of it may not work offline.');
     lines.forEach(function (l) { box.appendChild(el('p', { text: l })); });
     box.hidden = !lines.length;
+    var gid = it.id;
+    K.lib.outsideSaves(gid).then(function (o) { if (openGameId === gid) $('#dg-outside').hidden = !o.count; }, function () {});
   }
   async function saveTitle() {
     var id = openGameId, it = byId[id];
@@ -647,6 +649,21 @@ K.app = (function () {
     $('#dg-play-btn').addEventListener('click', function () { if (openGameId) launch(openGameId); });
     $('#dg-fav').addEventListener('click', function () { if (openGameId) toggleFav(openGameId); });
     $('#dg-cover-btn').addEventListener('click', changeGameCover);
+    $('#dg-outside-btn').addEventListener('click', async function () {
+      var id = openGameId, it = byId[id];
+      if (!it) return;
+      if (K.lib.isRunning(id)) { toast('Close “' + it.title + '” first, then try again.', 'err'); return; }
+      var a = await ask({
+        title: 'Use the progress from outside KERFINATOR?', ok: 'Use that progress', danger: true,
+        body: 'The saves this game made when it was opened directly replace its saves in KERFINATOR. Its current KERFINATOR progress for those saves is lost; export a backup first (Settings) if you might want it back.'
+      });
+      if (!a.ok) return;
+      try {
+        var r = await K.lib.useOutsideSaves(id);
+        $('#dg-outside').hidden = true;
+        toast('Done: ' + r.count + ' save' + (r.count === 1 ? '' : 's') + ' brought over. Start the game to continue where you left off.', 'ok', 7000);
+      } catch (e) { toast('That didn\u2019t work: ' + (e.message || e) + '. Close every tab of this game and try again.', 'err', 10000); }
+    });
     $('#dg-entry').addEventListener('change', async function () {
       var id = openGameId, v = $('#dg-entry').value, it = byId[id];
       await K.db.updateUser(id, function (u) { u.entry = v === it.game.entry ? undefined : v; });

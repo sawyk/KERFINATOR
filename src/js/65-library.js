@@ -102,7 +102,7 @@ K.lib = (function () {
     var ns = 'kfg:' + id + ':';
     for (var i = localStorage.length - 1; i >= 0; i--) {
       var k = localStorage.key(i);
-      if (k && (k.indexOf(ns) === 0 || k === 'kfc:' + id || k === 'kerf:diag:' + id)) localStorage.removeItem(k);
+      if (k && (k.indexOf(ns) === 0 || k === 'kfc:' + id || k === 'kfa:' + id || k === 'kerf:diag:' + id || k === 'kerf:noticed:' + id)) localStorage.removeItem(k);
     }
     if (indexedDB.databases) {
       var dbs = await indexedDB.databases();
@@ -112,6 +112,36 @@ K.lib = (function () {
         }
       }
     }
+  }
+
+  /* Progress this game has from being opened directly (outside KERFINATOR):
+     the save names the game has used in KERFINATOR that also exist outside it
+     with different contents. */
+  function adoptRecord(id) { try { return JSON.parse(localStorage.getItem('kfa:' + id) || 'null') || { ls: {}, db: {} }; } catch (e) { return { ls: {}, db: {} }; } }
+  async function outsideSaves(id) {
+    var rec = adoptRecord(id), ns = 'kfg:' + id + ':', keys = [], dbs = [];
+    Object.keys(rec.ls || {}).forEach(function (k) {
+      var raw = localStorage.getItem(k);
+      if (raw !== null && raw !== localStorage.getItem(ns + k)) keys.push(k);
+    });
+    var names = Object.keys(rec.db || {});
+    if (names.length && indexedDB.databases) {
+      var have = {}; (await indexedDB.databases()).forEach(function (d) { have[d.name] = 1; });
+      names.forEach(function (n) { if (have[n]) dbs.push(n); });
+    }
+    return { keys: keys, dbs: dbs, count: keys.length + dbs.length };
+  }
+  async function useOutsideSaves(id) {
+    var found = await outsideSaves(id), rec = adoptRecord(id), ns = 'kfg:' + id + ':';
+    found.keys.forEach(function (k) { localStorage.setItem(ns + k, localStorage.getItem(k)); rec.ls[k] = 'a'; });
+    for (var i = 0; i < found.dbs.length; i++) {
+      var n = found.dbs[i];
+      await new Promise(function (res) { var r = indexedDB.deleteDatabase(ns + n); r.onsuccess = r.onerror = r.onblocked = function () { res(); }; });
+      await K.runtimeHelpers.copyDB(IDBFactory.prototype.open, n, ns + n);
+      rec.db[n] = 'a';
+    }
+    localStorage.setItem('kfa:' + id, JSON.stringify(rec));
+    return found;
   }
 
   async function saveSize(id) {
@@ -137,7 +167,7 @@ K.lib = (function () {
 
   return {
     all: all, launch: launch, isRunning: isRunning, refreshRunning: refreshRunning, playUrl: playUrl, foldSessions: foldSessions, diagnostics: diagnostics,
-    wipeSaves: wipeSaves, saveSize: saveSize, remove: remove, requestPersistence: requestPersistence,
+    wipeSaves: wipeSaves, outsideSaves: outsideSaves, useOutsideSaves: useOutsideSaves, saveSize: saveSize, remove: remove, requestPersistence: requestPersistence,
     onChange: function (fn) { listeners.push(fn); }, changed: changed
   };
 })();

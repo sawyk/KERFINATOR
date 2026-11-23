@@ -348,6 +348,8 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
 .stats dt { font-size: 12px; color: var(--steel-dim); }
 .stats dd { margin: 0; font: 600 15px/1.35 var(--display); color: var(--white); font-variant-numeric: tabular-nums; }
 .dg-body .fine { margin: 0; font-size: 13px; color: var(--steel-dim); }
+.outside { border: 1px solid #3a3e45; border-left: 3px solid #c79a3a; background: #14130f; padding: 10px 12px; font-size: 13px; color: var(--chrome); display: grid; gap: 8px; justify-items: start; }
+.outside p { margin: 0; }
 .diag { border: 1px solid #4d1a22; background: #140a0c; padding: 10px 12px; font-size: 13px; color: #f0b3b9; }
 .diag p { margin: 0 0 4px; }
 .diag p:last-child { margin: 0; }

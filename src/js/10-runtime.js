@@ -234,7 +234,46 @@ function KERF_RUNTIME(C, MODE) {
     return code.replace(/\blocation\.protocol\b(?!\s*=(?!=))/g, '__kerfLoc.protocol');
   }
 
+  /* Copy one IndexedDB database (schema + every record) to a new name.
+     Values are copied with the browser's own structured cloning. */
+  function copyDB(openFn, from, to) {
+    function req(r) { return new Promise(function (res, rej) { r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
+    return req(openFn.call(indexedDB, from)).then(function (src) {
+      var names = Array.prototype.slice.call(src.objectStoreNames), version = src.version;
+      if (!names.length) { src.close(); return null; }
+      var tx = src.transaction(names, 'readonly'), dump = [];
+      names.forEach(function (n) {
+        var st = tx.objectStore(n), d = { name: n, keyPath: st.keyPath, auto: st.autoIncrement, idx: [], keys: null, vals: null };
+        Array.prototype.forEach.call(st.indexNames, function (i) { var ix = st.index(i); d.idx.push([i, ix.keyPath, { unique: ix.unique, multiEntry: ix.multiEntry }]); });
+        st.getAllKeys().onsuccess = function (e) { d.keys = e.target.result; };
+        st.getAll().onsuccess = function (e) { d.vals = e.target.result; };
+        dump.push(d);
+      });
+      return new Promise(function (res, rej) { tx.oncomplete = res; tx.onerror = function () { rej(tx.error); }; }).then(function () {
+        src.close();
+        var o = openFn.call(indexedDB, to, version);
+        o.onupgradeneeded = function () {
+          var db = o.result;
+          dump.forEach(function (d) {
+            var opt = {}; if (d.keyPath !== null && d.keyPath !== undefined) opt.keyPath = d.keyPath; if (d.auto) opt.autoIncrement = true;
+            var st = db.objectStoreNames.contains(d.name) ? o.transaction.objectStore(d.name) : db.createObjectStore(d.name, opt);
+            d.idx.forEach(function (i) { if (!st.indexNames.contains(i[0])) st.createIndex(i[0], i[1], i[2]); });
+          });
+        };
+        return req(o).then(function (dst) {
+          var t2 = dst.transaction(names, 'readwrite');
+          dump.forEach(function (d) {
+            var st = t2.objectStore(d.name);
+            d.vals.forEach(function (v, j) { if (d.keyPath !== null && d.keyPath !== undefined) st.put(v); else st.put(v, d.keys[j]); });
+          });
+          return new Promise(function (res, rej) { t2.oncomplete = function () { dst.close(); res(true); }; t2.onerror = function () { dst.close(); rej(t2.error); }; });
+        });
+      });
+    });
+  }
+
   var helpers = {
+    copyDB: copyDB,
     VROOT: VROOT, normPath: normPath, dirOf: dirOf, vurl: vurl, staticRef: staticRef,
     rewriteCSS: rewriteCSS, rewriteHTML: rewriteHTML, rewriteSrcset: rewriteSrcset,
     rewriteModule: rewriteModule, patchProtocol: patchProtocol, decodeEntities: decodeEntities,
@@ -401,11 +440,35 @@ function KERF_RUNTIME(C, MODE) {
       return keyCache;
     };
     G.addEventListener('storage', function () { keyCache = null; });
+
+    /* Saves made outside KERFINATOR. Opening a game's file directly stores its
+       saves under the game's own names in the same browser storage. The first
+       time the game looks for a save that KERFINATOR doesn't have yet, it is
+       copied over (never moved), so progress carries over. Once the game has
+       saved in KERFINATOR, its KERFINATOR progress is never replaced behind
+       its back. The record (kfa:) also lets the launcher offer to bring
+       outside progress in on request. */
+    var RESERVED = /^(kerf:|kfg:|kfc:|kfa:)/, AK = 'kfa:' + (C.gameId || 'unknown');
+    var adopt = { ls: {}, db: {} };
+    try { adopt = JSON.parse(realLS.getItem(AK) || 'null') || adopt; adopt.ls = adopt.ls || {}; adopt.db = adopt.db || {}; } catch (e) {}
+    var saveAdopt = function () { try { realLS.setItem(AK, JSON.stringify(adopt)); } catch (e) {} };
+    var mark = function (k, st) { if (adopt.ls[k] !== st && !(st === 's' && adopt.ls[k])) { adopt.ls[k] = st; saveAdopt(); } };
     var api = {
-      getItem: function (k) { return realLS.getItem(NS + k); },
-      setItem: function (k, v) { realLS.setItem(NS + k, String(v)); keyCache = null; },
-      removeItem: function (k) { realLS.removeItem(NS + k); keyCache = null; },
-      clear: function () { nsKeys().slice().forEach(function (k) { realLS.removeItem(NS + k); }); keyCache = null; },
+      getItem: function (k) {
+        k = String(k);
+        var v = realLS.getItem(NS + k);
+        if (v !== null) { mark(k, 's'); return v; }
+        var st = adopt.ls[k];
+        if (st !== 'w' && st !== 'a' && !RESERVED.test(k)) {
+          var raw = realLS.getItem(k);
+          if (raw !== null) { try { realLS.setItem(NS + k, raw); keyCache = null; } catch (e) {} mark(k, 'a'); return raw; }
+        }
+        mark(k, 's');
+        return null;
+      },
+      setItem: function (k, v) { k = String(k); realLS.setItem(NS + k, String(v)); keyCache = null; mark(k, 'w'); },
+      removeItem: function (k) { k = String(k); realLS.removeItem(NS + k); keyCache = null; mark(k, 'w'); },
+      clear: function () { nsKeys().slice().forEach(function (k) { realLS.removeItem(NS + k); adopt.ls[k] = 'w'; }); saveAdopt(); keyCache = null; },
       key: function (i) { var ks = nsKeys(); return i >= 0 && i < ks.length ? ks[i] : null; }
     };
     var target = Object.create(Storage.prototype);
@@ -415,18 +478,60 @@ function KERF_RUNTIME(C, MODE) {
         if (hasOwn.call(api, p)) return api[p];
         if (typeof p === 'symbol') return t[p];
         if (p in Object.prototype) return Object.prototype[p];
-        var v = realLS.getItem(NS + p); return v === null ? undefined : v;
+        var v = api.getItem(p); return v === null ? undefined : v;
       },
       set: function (t, p, v) { if (typeof p !== 'symbol') api.setItem(p, v); return true; },
       deleteProperty: function (t, p) { api.removeItem(p); return true; },
-      has: function (t, p) { return p === 'length' || hasOwn.call(api, p) || realLS.getItem(NS + String(p)) !== null; },
+      has: function (t, p) { return p === 'length' || hasOwn.call(api, p) || (typeof p !== 'symbol' && api.getItem(p) !== null); },
       ownKeys: function () { return nsKeys().slice(); },
       getOwnPropertyDescriptor: function (t, p) {
-        var v = typeof p === 'symbol' ? null : realLS.getItem(NS + p);
+        var v = typeof p === 'symbol' ? null : api.getItem(p);
         return v === null ? undefined : { value: v, writable: true, enumerable: true, configurable: true };
       }
     });
     try { Object.defineProperty(G, 'localStorage', { configurable: true, enumerable: true, get: function () { return proxy; } }); } catch (e) {}
+
+    if (G.IDBFactory && oIdbList) {
+      var pendingCopy = {};
+      // An open request that starts once the copy is done. It behaves like the
+      // real request (handlers, listeners, result), which it forwards to.
+      var deferredOpen = function (wait, doOpen) {
+        var px = Object.create(IDBOpenDBRequest.prototype), real = null, on = {}, ls = [];
+        ['success', 'error', 'upgradeneeded', 'blocked'].forEach(function (t) {
+          Object.defineProperty(px, 'on' + t, { configurable: true, get: function () { return on[t] || null; }, set: function (f) { on[t] = f; if (real) real['on' + t] = f; } });
+        });
+        ['result', 'error', 'source', 'transaction', 'readyState'].forEach(function (k) {
+          Object.defineProperty(px, k, { configurable: true, get: function () {
+            if (real) return real[k];
+            if (k === 'readyState') return 'pending';
+            if (k === 'result' || k === 'error') throw new DOMException('The request has not finished.', 'InvalidStateError');
+            return null;
+          } });
+        });
+        px.addEventListener = function (t, f, o) { ls.push([t, f, o]); if (real) real.addEventListener(t, f, o); };
+        px.removeEventListener = function (t, f) { ls = ls.filter(function (l) { return !(l[0] === t && l[1] === f); }); if (real) real.removeEventListener(t, f); };
+        px.dispatchEvent = function (e) { return real ? real.dispatchEvent(e) : true; };
+        wait.then(function () {
+          real = doOpen();
+          for (var t in on) if (on[t]) real['on' + t] = on[t];
+          ls.forEach(function (l) { real.addEventListener(l[0], l[1], l[2]); });
+        });
+        return px;
+      };
+      IDBF.open = function (name) {
+        var a = Array.prototype.slice.call(arguments), raw = String(name), self = this;
+        a[0] = NS + raw;
+        var doOpen = function () { return oIdbOpen.apply(self, a); };
+        if (pendingCopy[raw]) return deferredOpen(pendingCopy[raw], doOpen);
+        if (adopt.db[raw] || RESERVED.test(raw) || raw === 'kerfinator') return doOpen();
+        adopt.db[raw] = 's'; saveAdopt();   // only the first open in KERFINATOR looks outside
+        pendingCopy[raw] = oIdbList.call(indexedDB).then(function (list) {
+          var have = {}; list.forEach(function (d) { have[d.name] = 1; });
+          if (have[raw] && !have[NS + raw]) return copyDB(oIdbOpen, raw, NS + raw).then(function (ok) { if (ok) { adopt.db[raw] = 'a'; saveAdopt(); } });
+        }).catch(function () {}).then(function () { delete pendingCopy[raw]; });
+        return deferredOpen(pendingCopy[raw], doOpen);
+      };
+    }
 
     // Chromium has no cookies on file:// — emulate them so cookie-based saves work.
     var CK = 'kfc:' + (C.gameId || 'unknown');
@@ -853,9 +958,13 @@ function KERF_RUNTIME(C, MODE) {
   var noticeHost = null;
   function showNotice() {
     if (!missing.length && !external.length && !fatal) return;
+    // Say it once: the same problem isn't repeated every time the game starts
+    // (the details stay available in the game's ⋯ panel in KERFINATOR).
+    var sig = JSON.stringify([missing.slice().sort(), !!external.length, fatal]), seenKey = 'kerf:noticed:' + C.gameId;
+    try { if (!noticeHost && realLS && realLS.getItem(seenKey) === sig) return; if (realLS) realLS.setItem(seenKey, sig); } catch (e) {}
     var lines = [];
     if (fatal === 'isolation') lines.push('This game needs a browser feature (cross-origin isolation) that is only available on web servers, so it cannot run from KERFINATOR.');
-    if (missing.length) lines.push(missing.length + ' file' + (missing.length > 1 ? 's' : '') + ' could not be found in this game: ' + missing.slice(0, 4).join(', ') + (missing.length > 4 ? ', …' : ''));
+    if (missing.length) lines.push((missing.length === 1 ? 'A file this game refers to isn\u2019t included: ' : missing.length + ' files this game refers to aren\u2019t included: ') + missing.slice(0, 4).join(', ') + (missing.length > 4 ? ', …' : '') + '. If the game works, you can ignore this.');
     if (external.length) lines.push('This game tries to load files from the internet, which KERFINATOR never does: ' + external.slice(0, 2).map(function (u) { try { return new URL(u).host; } catch (e) { return u; } }).join(', '));
     if (!noticeHost) {
       noticeHost = D.createElement('kerf-notice');

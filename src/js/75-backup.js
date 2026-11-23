@@ -99,7 +99,7 @@ K.backup = (function () {
     var local = {};
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
-      if (k && (k.indexOf('kfg:') === 0 || k.indexOf('kfc:') === 0)) local[k] = localStorage.getItem(k);
+      if (k && (k.indexOf('kfg:') === 0 || k.indexOf('kfc:') === 0 || k.indexOf('kfa:') === 0)) local[k] = localStorage.getItem(k);
     }
     var dbs = [];
     if (indexedDB.databases) {

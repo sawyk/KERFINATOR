@@ -129,6 +129,8 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await page.click('#import-all');
   await row('Collection Two').locator('.imp-msg.ok').waitFor({ timeout: 15000 });
 
+  await importFolder(path.join(FX, 'carry-over'));
+  await addRow('Carry Over Test');
   await importFolder(path.join(FX, 'webgl-shot'));
   await addRow('WebGL Shot Test');
   await importFolder(path.join(FX, 'multipage'));
@@ -168,7 +170,7 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await page.click('.tab[data-view=library]');
   const total = await page.locator('#grid .card').count();
   const HAS_PHASER = fs.existsSync(path.join(FX, 'phaser-game'));
-  const TOTAL = HAS_PHASER ? 16 : 15;
+  const TOTAL = HAS_PHASER ? 17 : 16;
   ok(total === TOTAL, 'library contains all games', total);
 
   /* ------------------------------------------------------------ */
@@ -203,6 +205,32 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   ok(raw.ns === '3' && raw.plain === null, 'game saves are namespaced per game', raw);
   ok(/kc/.test(raw.cookie || ''), 'cookie saves are kept per game');
   ok((await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name))).some((n) => n === 'kfg:' + kitchenId + ':sinkdb'), 'game databases are namespaced per game');
+
+  // Progress from playing a game's file directly (outside KERFINATOR) carries over
+  await page.evaluate(async () => {
+    localStorage.setItem('carry.slot', 'outside-1');
+    await new Promise((res) => { const r = indexedDB.open('carrydb', 1); r.onupgradeneeded = () => r.result.createObjectStore('s'); r.onsuccess = () => { const tx = r.result.transaction('s', 'readwrite'); tx.objectStore('s').put({ n: 7, when: new Date(5) }, 'k'); tx.oncomplete = () => { r.result.close(); res(); }; }; });
+  });
+  gp = await launch('Carry Over Test');
+  T = await gp.evaluate(() => window.__T);
+  ok(T && T.ls === 'outside-1' && T.idb && T.idb.n === 7 && T.idb.when instanceof Object, 'saves made outside KERFINATOR carry over (localStorage and IndexedDB)', T);
+  await gp.evaluate(() => window.writeSave('kerf-2'));
+  await closeTab(gp);
+  ok((await page.evaluate(() => localStorage.getItem('carry.slot'))) === 'outside-1', 'carrying over copies the outside saves, never moves them');
+  await page.evaluate(() => localStorage.setItem('carry.slot', 'outside-3'));
+  gp = await launch('Carry Over Test');
+  ok((await gp.evaluate(() => window.__T.ls)) === 'kerf-2', 'newer outside saves never silently replace KERFINATOR progress');
+  await closeTab(gp);
+  await page.locator('#grid .card', { hasText: 'Carry Over Test' }).locator('.more').click();
+  await page.locator('#dg-outside').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  ok(await page.locator('#dg-outside').isVisible(), 'the game\u2019s details offer the outside progress');
+  await page.click('#dg-outside-btn');
+  await page.click('#cf-ok');
+  await page.locator('.toast.ok', { hasText: 'brought over' }).waitFor({ timeout: 8000 }).catch(() => {});
+  await page.keyboard.press('Escape');
+  gp = await launch('Carry Over Test');
+  ok((await gp.evaluate(() => window.__T.ls)) === 'outside-3', '“Use that progress” brings the outside saves in');
+  await closeTab(gp);
 
   gp = await launch('Module Test');
   T = await gp.evaluate(() => window.__T);
