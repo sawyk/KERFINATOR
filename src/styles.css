@@ -170,7 +170,7 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
   transform: scaleX(0); transform-origin: left; transition: transform .3s var(--ease); box-shadow: 0 0 10px var(--ember);
 }
 .play-glyph {
-  position: absolute; left: 12px; bottom: 12px; width: 34px; height: 34px; display: grid; place-items: center;
+  position: absolute; left: 12px; top: 12px; width: 34px; height: 34px; display: grid; place-items: center;
   background: rgba(5, 5, 6, .78); border: 1px solid var(--crimson); opacity: 0; transform: translateY(4px);
   transition: opacity .2s, transform .2s var(--ease);
 }
@@ -363,6 +363,9 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
   .tabs { order: 3; width: 100%; height: 44px; }
   main { padding: 4px 16px 48px; }
   .strip, .install { padding-left: 16px; padding-right: 16px; }
+  .strip { flex-wrap: wrap; gap: 10px 12px; position: relative; padding-right: 44px; }
+  .strip p { flex-basis: 100%; }
+  .strip .x { position: absolute; top: 8px; right: 8px; }
   .imp { grid-template-columns: 120px 1fr; }
   .imp-side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; min-width: 0; }
   .dg-layout { grid-template-columns: 1fr; }
@@ -373,4 +376,8 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+@media (hover: none) {
+  .card .more { opacity: 1; }
+  .play-glyph { opacity: .9; transform: none; }
 }

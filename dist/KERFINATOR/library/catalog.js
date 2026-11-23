@@ -2,7 +2,7 @@
    To change the games, edit the games folder and run "Build USB library" again. */
 KERFINATOR_CATALOG({
  "format": 1,
- "generated": "2026-11-23T16:53:36.392Z",
+ "generated": "2026-11-23T17:03:11.026Z",
  "games": [
   {
    "key": "core-breach",
@@ -27,8 +27,8 @@ KERFINATOR_CATALOG({
    "title": "Deutsch Destroyer",
    "entry": "index.html",
    "cover": "cover.svg",
-   "fp": "995ec074a153e7d40b1d3e53e1efac37caaf3bba04fb9f8e0e6a128413cbb3de",
-   "size": 62897,
+   "fp": "da56530caa628f6a2102edfbc2f80d131e86b36542eef2bb1157f337d3b25693",
+   "size": 63104,
    "files": 11,
    "chunks": 1,
    "external": [],

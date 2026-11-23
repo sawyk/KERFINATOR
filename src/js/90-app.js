@@ -23,7 +23,9 @@ K.app = (function () {
   /* ---------------- shared helpers ---------------- */
   function toast(msg, kind, ms) {
     var t = el('div', { class: 'toast ' + (kind || ''), role: kind === 'err' ? 'alert' : 'status', text: msg });
-    $('#toasts').appendChild(t);
+    var box = $('#toasts');
+    box.appendChild(t);
+    while (box.children.length > 3) box.firstElementChild.remove();
     setTimeout(function () { t.classList.add('leaving'); setTimeout(function () { t.remove(); }, 300); }, ms || (kind === 'err' ? 8000 : 4200));
   }
   function download(blob, name) {
@@ -437,7 +439,7 @@ K.app = (function () {
     r.busy = false;
     renderRow(r);
     updateImportActions();
-    if (r.done) toast('“' + r.done.title + '” added to your library.', 'ok');
+    if (r.done && !batchMode) toast('“' + r.done.title + '” added to your library.', 'ok');
   }
   function updateImportActions() {
     var ready = rows.filter(function (r) { return rowState(r) === 'ready'; }).length;
@@ -447,9 +449,14 @@ K.app = (function () {
     $('#import-all').textContent = ready > 1 ? 'Add all ' + ready + ' ready games' : 'Add ready game';
     $('#import-clear').disabled = finished === 0;
   }
+  var batchMode = false;
   async function addAllReady() {
     var list = rows.filter(function (r) { return rowState(r) === 'ready'; });
+    batchMode = list.length > 1;
     for (var i = 0; i < list.length; i++) await commitRow(list[i]);
+    batchMode = false;
+    var added = list.filter(function (r) { return r.done; }).length, failed = list.length - added;
+    if (list.length > 1) toast(added + ' game' + (added === 1 ? '' : 's') + ' added to your library.' + (failed ? ' ' + failed + ' could not be added; see the list.' : ''), failed ? 'err' : 'ok');
   }
 
   /* ---------------- USB / system ---------------- */
@@ -475,8 +482,9 @@ K.app = (function () {
     var cat = K.usb.state.catalog;
     var dismissed = localStorage.getItem('kerf:strip-dismissed') === '1';
     if (!cat || dismissed || localStorage.getItem('kerf:saved')) { strip.hidden = true; return; }
+    var busy = K.usb.state.installing || (await K.usb.pending()).length > 0;
     strip.textContent = '';
-    strip.appendChild(el('p', { text: 'You opened KERFINATOR from the USB drive. Your games are being copied into this browser. To keep playing after you unplug the USB, save KERFINATOR to this computer and open that copy next time.' }));
+    strip.appendChild(el('p', { text: 'You opened KERFINATOR from the USB drive. ' + (busy ? 'Its games are being copied into this browser.' : 'Its games are now stored in this browser.') + ' To keep playing after you unplug the USB, save KERFINATOR to this computer and open that copy next time.' }));
     strip.appendChild(el('button', { class: 'btn btn-primary btn-small', text: 'Save to this computer', onclick: saveLauncher }));
     strip.appendChild(el('button', { class: 'x', 'aria-label': 'Dismiss', text: '×', onclick: function () { localStorage.setItem('kerf:strip-dismissed', '1'); strip.hidden = true; } }));
     strip.hidden = false;
@@ -698,7 +706,12 @@ K.app = (function () {
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { K.lib.foldSessions(); refreshSoon(); } });
     setInterval(function () { if (document.visibilityState === 'visible') K.lib.foldSessions(); }, 30000);
     K.lib.onChange(refreshSoon);
-    K.usb.onChange(function (st) { renderInstall(st); if (currentView() === 'system') renderSystem(); if (!items.length) renderLibrary(); });
+    K.usb.onChange(function (st) {
+      renderInstall(st);
+      if (currentView() === 'system') renderSystem();
+      if (!items.length) renderLibrary();
+      if (!st.installing && !$('#strip').hidden) renderStrip();
+    });
   }
 
   async function start() {

@@ -62,6 +62,7 @@ K.thumbs = (function () {
     while (lines.some(function (l) { return g.measureText(l).width > W - 96; }) && size > 34) {
       size -= 4; g.font = '700 ' + size + 'px "Chakra Petch", "Segoe UI", sans-serif'; lines = wrapLines(g, String(title).toUpperCase(), W - 96, 3);
     }
+    try { g.letterSpacing = '3px'; } catch (e) {}
     var lh = size * 1.02, y0 = H - 64 - (lines.length - 1) * lh;
     g.fillStyle = '#c8102e'; g.fillRect(48, y0 - size - 22, 44, 4);
     g.fillStyle = '#e6e9ee'; g.textBaseline = 'alphabetic';

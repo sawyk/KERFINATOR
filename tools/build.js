@@ -114,4 +114,5 @@ function main() {
   fs.copyFileSync(path.join(SRC, 'fonts', 'OFL-ChakraPetch.txt'), path.join(OUT, 'library', 'FONT-LICENSE.txt'));
   console.log('Output:', OUT);
 }
-main();
+if (require.main === module) main();
+module.exports = { bundle, packGame };

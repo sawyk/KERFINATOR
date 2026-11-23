@@ -131,10 +131,27 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   ok(true, 'drag-and-drop import');
   await page.screenshot({ path: path.join(SHOTS, '02-import.png'), fullPage: true });
 
+  if (fs.existsSync(path.join(FX, 'phaser-game'))) {
+    await importFolder(path.join(FX, 'phaser-game'));
+    await addRow('Phaser Engine Test');
+    ok(true, 'folder import (Phaser 3 game)');
+  } else console.log('  (Phaser not installed: run npm install to include the real-engine test)');
+
+  // a file that cannot be read must fail the import instead of storing an empty file
+  const unreadable = await page.evaluate(async () => {
+    try {
+      await K.importer.commit({ fp: 'f'.repeat(64), size: 75, files: [{ path: 'index.html', file: new Blob(['<title>x</title>']), size: 16 }, { path: 'a.png', file: new Blob([]), size: 75 }], entry: 'index.html', title: 'Unreadable' }, {});
+      return 'imported';
+    } catch (e) { return e.message + ' | left behind: ' + (await K.db.filesOf('g' + 'f'.repeat(12))).length; }
+  });
+  ok(/could not be read \(a\.png\).*left behind: 0/.test(unreadable), 'unreadable files fail the import cleanly', unreadable);
+
   await page.click('#import-clear');
   await page.click('.tab[data-view=library]');
   const total = await page.locator('#grid .card').count();
-  ok(total === 12, 'library contains all games', total);
+  const HAS_PHASER = fs.existsSync(path.join(FX, 'phaser-game'));
+  const TOTAL = HAS_PHASER ? 13 : 12;
+  ok(total === TOTAL, 'library contains all games', total);
 
   /* ------------------------------------------------------------ */
   section('3. Launching games in their own tab');
@@ -152,13 +169,16 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   ok(await gp.evaluate(() => !document.getElementById('app') && !document.querySelector('.top')), 'no launcher UI around the game');
   ok(await gp.evaluate(() => document.fullscreenEnabled), 'game tab can use fullscreen');
   const kitchenId = new URL(gp.url()).searchParams.get('play');
+  await gp.reload();
+  await gp.waitForFunction(() => window.__DONE, null, { timeout: 15000 }).catch(() => {});
+  ok(await gp.evaluate(() => window.__T && window.__T.fetch === 'ok'), 'reloading a game tab restarts the game');
   await gp.close();
 
   gp = await launch('Kitchen Sink Test');
-  ok((await gp.evaluate(() => [window.__RUNS, window.__IDB])).join() === '2,2', 'saves persist between sessions (localStorage + IndexedDB)', await gp.evaluate(() => [window.__RUNS, window.__IDB]));
+  ok((await gp.evaluate(() => [window.__RUNS, window.__IDB])).join() === '3,3', 'saves persist between sessions (localStorage + IndexedDB)', await gp.evaluate(() => [window.__RUNS, window.__IDB]));
   await gp.close();
   const raw = await page.evaluate((id) => ({ ns: localStorage.getItem('kfg:' + id + ':runs'), plain: localStorage.getItem('runs'), cookie: localStorage.getItem('kfc:' + id) }), kitchenId);
-  ok(raw.ns === '2' && raw.plain === null, 'game saves are namespaced per game', raw);
+  ok(raw.ns === '3' && raw.plain === null, 'game saves are namespaced per game', raw);
   ok(/kc/.test(raw.cookie || ''), 'cookie saves are kept per game');
   ok((await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name))).some((n) => n === 'kfg:' + kitchenId + ':sinkdb'), 'game databases are namespaced per game');
 
@@ -167,9 +187,16 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   for (const [k, v] of Object.entries(T || { modules: 'did not run' })) ok(v === 'ok', 'modules: ' + k, v);
   await gp.close();
 
-  for (const [title, check] of [['Nested Zip Game', (t) => t.zipScript === 'ok'], ['Tiny Single File', (t) => t.single === 'ok'], ['Beta', (t) => t.page === 'beta'], ['Collection Two', (t) => t.c === 'two'], ['Dropped Game', (t) => t.drop === 'ok']]) {
+  for (const [title, check] of [['Nested Zip Game', (t) => t.zipScript === 'ok' && t.unicodeNames === 'ok'], ['Tiny Single File', (t) => t.single === 'ok'], ['Beta', (t) => t.page === 'beta'], ['Collection Two', (t) => t.c === 'two'], ['Dropped Game', (t) => t.drop === 'ok']]) {
     gp = await launch(title);
     ok(check((await gp.evaluate(() => window.__T)) || {}), 'launch: ' + title);
+    await gp.close();
+  }
+  if (HAS_PHASER) {
+    gp = await launch('Phaser Engine Test');
+    T = await gp.evaluate(() => window.__T);
+    for (const [k, v] of Object.entries(T || { phaser: 'did not start' })) ok(v === 'ok', 'phaser: ' + k, v);
+    await gp.screenshot({ path: path.join(SHOTS, '07-phaser.png') });
     await gp.close();
   }
   for (const [title, flag] of [['Deutsch Destroyer', '__DD_READY'], ['Core Breach', '__CB_READY'], ['Signal Lost', '__SL_READY']]) {
@@ -229,6 +256,44 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await page.waitForTimeout(300);
   await page.keyboard.press('Escape');
   ok((await page.locator('#grid .card', { hasText: 'Tiny Renamed' }).count()) === 1, 'rename from the details dialog');
+  // importing a newer version of a game offers to update it in place
+  const tinyBefore = await page.evaluate(async () => (await K.db.getAll('games')).find((g) => g.title === 'Tiny Single File').id);
+  await page.click('.tab[data-view=import]');
+  await importFolder(path.join(FX, 'tiny-v2'));
+  const upd = page.locator('.imp.is-choose', { hasText: 'different version' });
+  await upd.waitFor({ timeout: 10000 });
+  await upd.locator('button', { hasText: 'Update existing' }).click();
+  await page.locator('.imp.is-added').last().waitFor({ timeout: 10000 });
+  await page.click('#import-clear');
+  await page.click('.tab[data-view=library]');
+  const tinyAfter = await page.evaluate(async () => (await K.db.getAll('games')).filter((g) => g.title === 'Tiny Single File').map((g) => g.id));
+  ok(tinyAfter.length === 1 && tinyAfter[0] === tinyBefore && (await page.locator('#grid .card', { hasText: 'Tiny Renamed' }).count()) === 1, 'updating a game keeps its identity, custom title and saves', tinyAfter);
+  gp = await launch('Tiny Renamed');
+  ok((await gp.evaluate(() => window.__T.version)) === 2, 'updated game runs the new version');
+  await gp.close();
+
+  // a changed game on the USB drive updates in place on next launch, keeping playtime
+  const { packGame } = require(path.join(ROOT, 'tools', 'build.js'));
+  const sl2 = path.join(TMP, 'signal-lost-v2');
+  fs.cpSync(path.join(ROOT, 'demo-games', 'signal-lost'), sl2, { recursive: true });
+  fs.appendFileSync(path.join(sl2, 'signal-lost.html'), '\n<!-- v2 -->\n');
+  const entry2 = packGame('signal-lost', sl2, path.join(USB, 'library'));
+  const catFile = path.join(USB, 'library', 'catalog.js');
+  const catText = fs.readFileSync(catFile, 'utf8');
+  const cat = JSON.parse(catText.slice(catText.indexOf('(') + 1, catText.lastIndexOf(')')));
+  const oldFp = cat.games.find((g) => g.key === 'signal-lost').fp;
+  cat.games = cat.games.map((g) => (g.key === 'signal-lost' ? entry2 : g));
+  fs.writeFileSync(catFile, 'KERFINATOR_CATALOG(' + JSON.stringify(cat) + ');');
+  await page.reload();
+  for (let i = 0; i < 60; i++) {
+    const g = await page.evaluate(() => K.db.get('games', 'u-signal-lost'));
+    if (g && g.fp === entry2.fp && !g.installing) break;
+    await page.waitForTimeout(250);
+  }
+  const slNow = await page.evaluate(async () => ({ g: await K.db.get('games', 'u-signal-lost'), u: await K.db.get('user', 'u-signal-lost') }));
+  ok(slNow.g.fp === entry2.fp && slNow.g.fp !== oldFp && slNow.u.play === play1, 'changed USB game is updated in place; playtime kept');
+  await page.locator('#grid .card').first().waitFor();
+
   await page.screenshot({ path: path.join(SHOTS, '03-library-full.png') });
   await page.locator('#grid .card', { hasText: 'Signal Lost' }).locator('.more').click();
   await page.waitForTimeout(250);
@@ -245,7 +310,7 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   const backupPath = path.join(TMP, 'backup.json');
   await dl.saveAs(backupPath);
   const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-  ok(backup.kerfinator === 'backup' && backup.local['kfg:' + kitchenId + ':runs'] === '2', 'backup contains save data', Object.keys(backup.local).length);
+  ok(backup.kerfinator === 'backup' && backup.local['kfg:' + kitchenId + ':runs'] === '3', 'backup contains save data', Object.keys(backup.local).length);
   ok(backup.idb.some((d) => d.name === 'kfg:' + kitchenId + ':sinkdb'), 'backup contains game databases');
   await page.evaluate(async (id) => { await K.lib.wipeSaves(id); await K.db.updateUser('u-core-breach', (u) => { u.fav = false; }); }, kitchenId);
   await page.setInputFiles('#in-restore', backupPath);
@@ -254,7 +319,7 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await page.click('.tab[data-view=library]');
   ok((await page.locator('#grid .card', { hasText: 'Core Breach' }).locator('.fav').getAttribute('aria-pressed')) === 'true', 'restore brings back favorites');
   gp = await launch('Kitchen Sink Test');
-  ok((await gp.evaluate(() => [window.__RUNS, window.__IDB])).join() === '3,3', 'restore brings back localStorage and IndexedDB saves', await gp.evaluate(() => [window.__RUNS, window.__IDB]));
+  ok((await gp.evaluate(() => [window.__RUNS, window.__IDB])).join() === '4,4', 'restore brings back localStorage and IndexedDB saves', await gp.evaluate(() => [window.__RUNS, window.__IDB]));
   await gp.close();
 
   /* ------------------------------------------------------------ */
@@ -270,14 +335,14 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await page.goto(fileUrl(path.join(DESKTOP, 'KERFINATOR.html')));
   await page.locator('#grid .card').first().waitFor({ timeout: 10000 });
   await page.waitForTimeout(500);
-  ok((await page.locator('#grid .card').count()) === 12, 'all games still in the library without the USB', await page.locator('#grid .card').count());
+  ok((await page.locator('#grid .card').count()) === TOTAL, 'all games still in the library without the USB', await page.locator('#grid .card').count());
   ok(!(await page.locator('#strip').isVisible()), 'no USB banner on the computer copy');
   gp = await launch('Core Breach', '__CB_READY');
   ok(!!(await gp.evaluate(() => window.__CB_READY)), 'USB game plays with the USB removed');
   await gp.close();
   gp = await launch('Kitchen Sink Test');
   T = await gp.evaluate(() => window.__T);
-  ok(T && Object.values(T).every((v) => v === 'ok') && (await gp.evaluate(() => window.__RUNS)) === 4, 'imported game plays with all assets and saves');
+  ok(T && Object.values(T).every((v) => v === 'ok') && (await gp.evaluate(() => window.__RUNS)) === 5, 'imported game plays with all assets and saves');
   await gp.close();
 
   /* ------------------------------------------------------------ */

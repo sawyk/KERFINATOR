@@ -72,6 +72,7 @@ module.exports = function make(root) {
   w(path.join(K, 'js/worker.js'), `importScripts('helper.js');
 fetch('../data/info.json').then(r => r.json()).then(j => postMessage({ helper: self.HELPER, ok: j.ok })).catch(e => postMessage({ err: String(e) }));`);
   w(path.join(K, 'js/dyn.js'), 'window.__DYN = 1;');
+
   w(path.join(K, 'js/boot.js'), `(function () {
   var T = window.__T = {};
   var pending = 0;
@@ -152,8 +153,14 @@ window.__DONE = true;`);
   /* 3. Zip with a wrapper folder, readme, nested start page */
   w(path.join(root, 'nested-game.zip'), zip([
     ['Nested Game v1.2/readme.txt', Buffer.from('read me')],
-    ['Nested Game v1.2/game/index.html', Buffer.from('<!DOCTYPE html><title>Nested Zip Game</title><script src="js/a.js"></script>')],
-    ['Nested Game v1.2/game/js/a.js', Buffer.from('window.__DONE = true; window.__T = { zipScript: "ok" };')],
+    ['Nested Game v1.2/game/index.html', Buffer.from('<!DOCTYPE html><meta charset="utf-8"><title>Nested Zip Game</title><img id="u" src="img/my%20logo%20%C3%BC.png"><script src="js/a.js"></script>')],
+    ['Nested Game v1.2/game/js/a.js', Buffer.from(`window.__T = { zipScript: "ok" };
+var im = document.getElementById("u");
+Promise.all([new Promise(function (r) { if (im.complete) r(im.naturalWidth > 0); else { im.onload = function () { r(true); }; im.onerror = function () { r(false); }; } }),
+  fetch("data/naïve file.json").then(function (r) { return r.json(); }).then(function (j) { return j.u === 1; }, function () { return false; })])
+  .then(function (v) { window.__T.unicodeNames = v[0] && v[1] ? "ok" : "FAIL " + v; window.__DONE = true; });`)],
+    ['Nested Game v1.2/game/img/my logo ü.png', PNG_1PX_RED],
+    ['Nested Game v1.2/game/data/naïve file.json', Buffer.from('{"u":1}')],
     ['Nested Game v1.2/game/thumbnail.png', PNG_1PX_RED],
     ['__MACOSX/._junk', Buffer.from('x')]
   ]));
@@ -169,6 +176,9 @@ window.__DONE = true;`);
   /* 6. Single self-contained HTML file */
   w(path.join(root, 'tiny-game.html'), '<!DOCTYPE html><html><head><title>Tiny Single File</title></head><body><canvas></canvas><script>window.__T={single:"ok"};window.__DONE=true;</script></body></html>');
 
+  /* 6b. A newer version of the single-file game (same title, different content) */
+  w(path.join(root, 'tiny-v2/tiny-game.html'), '<!DOCTYPE html><html><head><title>Tiny Single File</title></head><body><script>window.__T={single:"ok",version:2};window.__DONE=true;</script></body></html>');
+
   /* 7. Collection: a folder of game folders */
   w(path.join(root, 'collection/game-one/index.html'), '<!DOCTYPE html><title>Collection One</title><script>window.__DONE=true;window.__T={c:"one"}</script>');
   w(path.join(root, 'collection/game-two/index.html'), '<!DOCTYPE html><title>Collection Two</title><script>window.__DONE=true;window.__T={c:"two"}</script>');
@@ -176,5 +186,43 @@ window.__DONE = true;`);
   /* 8. Multi-page + a missing asset + online dependency */
   w(path.join(root, 'multipage/index.html'), '<!DOCTYPE html><title>Multi Page</title><body><a id="next" href="level2.html">Next</a><img src="img/not-there.png"><script src="https://cdn.example.invalid/lib.js"></script><script>window.__DONE=true</script></body>');
   w(path.join(root, 'multipage/level2.html'), '<!DOCTYPE html><title>Level Two</title><script>window.__LEVEL2 = localStorage.getItem("shared") || "none"; window.__DONE=true;</script>');
+  /* 9. A real engine: Phaser 3 (WebGL renderer, XHR loader, Web Audio) */
+  let phaser = null;
+  try { phaser = require.resolve('phaser/dist/phaser.min.js'); } catch (e) {}
+  if (phaser) {
+    const P = path.join(root, 'phaser-game');
+    w(path.join(P, 'lib/phaser.min.js'), fs.readFileSync(phaser));
+    w(path.join(P, 'assets/sprites/ship.png'), makePng(32, 16, [200, 210, 220, 255]));
+    w(path.join(P, 'assets/sprites/sheet.png'), makePng(64, 16, [255, 43, 63, 255]));
+    w(path.join(P, 'assets/audio/beep.wav'), wav());
+    w(path.join(P, 'assets/data/config.json'), JSON.stringify({ speed: 3, title: 'phaser' }));
+    w(path.join(P, 'index.html'), '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Phaser Engine Test</title></head><body style="margin:0;background:#000"><script src="lib/phaser.min.js"></script><script src="game.js"></script></body></html>');
+    w(path.join(P, 'game.js'), `new Phaser.Game({
+  type: Phaser.WEBGL, width: 320, height: 240, backgroundColor: '#050506', audio: { disableWebAudio: false },
+  scene: {
+    preload() {
+      this.load.on('loaderror', (f) => { (window.__ERR = window.__ERR || []).push(f.key + ':' + f.url); });
+      this.load.image('ship', 'assets/sprites/ship.png');
+      this.load.spritesheet('sheet', 'assets/sprites/sheet.png', { frameWidth: 16, frameHeight: 16 });
+      this.load.json('config', 'assets/data/config.json');
+      this.load.audio('beep', ['assets/audio/beep.wav']);
+    },
+    create() {
+      this.add.image(160, 120, 'ship');
+      const cfg = this.cache.json.get('config');
+      const s = this.sound.add('beep');
+      window.__T = {
+        renderer: this.game.renderer.type === Phaser.WEBGL ? 'ok' : 'FAIL canvas fallback',
+        image: this.textures.exists('ship') && this.textures.get('ship').getSourceImage().width === 32 ? 'ok' : 'FAIL',
+        spritesheet: this.textures.get('sheet').frameTotal >= 4 ? 'ok' : 'FAIL ' + this.textures.get('sheet').frameTotal,
+        json: cfg && cfg.speed === 3 ? 'ok' : 'FAIL',
+        audio: this.cache.audio.exists('beep') && s ? 'ok' : 'FAIL',
+        loaderErrors: window.__ERR ? 'FAIL ' + window.__ERR.join() : 'ok'
+      };
+      window.__DONE = true;
+    }
+  }
+});`);
+  }
   return root;
 };

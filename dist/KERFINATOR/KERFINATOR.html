@@ -181,7 +181,7 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
   transform: scaleX(0); transform-origin: left; transition: transform .3s var(--ease); box-shadow: 0 0 10px var(--ember);
 }
 .play-glyph {
-  position: absolute; left: 12px; bottom: 12px; width: 34px; height: 34px; display: grid; place-items: center;
+  position: absolute; left: 12px; top: 12px; width: 34px; height: 34px; display: grid; place-items: center;
   background: rgba(5, 5, 6, .78); border: 1px solid var(--crimson); opacity: 0; transform: translateY(4px);
   transition: opacity .2s, transform .2s var(--ease);
 }
@@ -374,6 +374,9 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
   .tabs { order: 3; width: 100%; height: 44px; }
   main { padding: 4px 16px 48px; }
   .strip, .install { padding-left: 16px; padding-right: 16px; }
+  .strip { flex-wrap: wrap; gap: 10px 12px; position: relative; padding-right: 44px; }
+  .strip p { flex-basis: 100%; }
+  .strip .x { position: absolute; top: 8px; right: 8px; }
   .imp { grid-template-columns: 120px 1fr; }
   .imp-side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; min-width: 0; }
   .dg-layout { grid-template-columns: 1fr; }
@@ -384,6 +387,10 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+@media (hover: none) {
+  .card .more { opacity: 1; }
+  .play-glyph { opacity: .9; transform: none; }
 }
 
 </style>
@@ -1950,6 +1957,7 @@ K.thumbs = (function () {
     while (lines.some(function (l) { return g.measureText(l).width > W - 96; }) && size > 34) {
       size -= 4; g.font = '700 ' + size + 'px "Chakra Petch", "Segoe UI", sans-serif'; lines = wrapLines(g, String(title).toUpperCase(), W - 96, 3);
     }
+    try { g.letterSpacing = '3px'; } catch (e) {}
     var lh = size * 1.02, y0 = H - 64 - (lines.length - 1) * lh;
     g.fillStyle = '#c8102e'; g.fillRect(48, y0 - size - 22, 44, 4);
     g.fillStyle = '#e6e9ee'; g.textBaseline = 'alphabetic';
@@ -2166,10 +2174,20 @@ K.importer = (function () {
         if (batch.length >= 300 || bytes > 48 * 1024 * 1024) await flush();
       }
       await flush();
+      // Integrity check: a file that could not be read (USB unplugged, no
+      // permission) is stored by the browser as an empty blob without error.
+      var expected = {};
+      files.forEach(function (f) { expected[f.path] = f.size; });
+      var bad = (await K.db.filesOf(id)).filter(function (r) { return r.b.size !== expected[r.p]; });
+      if (bad.length) {
+        var err = new Error('Some files could not be read (' + bad.slice(0, 3).map(function (r) { return r.p; }).join(', ') + (bad.length > 3 ? ', …' : '') + ').');
+        err.unreadable = true;
+        throw err;
+      }
     } catch (e) {
       try { await K.db.deleteFiles(id); } catch (x) {}
       if (e && e.name === 'QuotaExceededError') throw new Error('The browser ran out of storage space while importing. Free up disk space and try again.');
-      throw new Error('Saving the game failed: ' + (e.message || e) + '. If the game was on a USB drive, make sure it is still connected.');
+      throw new Error((e && e.unreadable ? e.message : 'Saving the game failed: ' + (e.message || e) + '.') + ' Nothing was added. If the game is on a USB drive, make sure it is still connected, then try again.');
     }
     var title = (opts.title || info.title || 'Untitled game').trim();
     var coverPath = opts.coverFile ? null : (opts.cover !== undefined ? opts.cover : info.cover);
@@ -2914,7 +2932,9 @@ K.app = (function () {
   /* ---------------- shared helpers ---------------- */
   function toast(msg, kind, ms) {
     var t = el('div', { class: 'toast ' + (kind || ''), role: kind === 'err' ? 'alert' : 'status', text: msg });
-    $('#toasts').appendChild(t);
+    var box = $('#toasts');
+    box.appendChild(t);
+    while (box.children.length > 3) box.firstElementChild.remove();
     setTimeout(function () { t.classList.add('leaving'); setTimeout(function () { t.remove(); }, 300); }, ms || (kind === 'err' ? 8000 : 4200));
   }
   function download(blob, name) {
@@ -3328,7 +3348,7 @@ K.app = (function () {
     r.busy = false;
     renderRow(r);
     updateImportActions();
-    if (r.done) toast('“' + r.done.title + '” added to your library.', 'ok');
+    if (r.done && !batchMode) toast('“' + r.done.title + '” added to your library.', 'ok');
   }
   function updateImportActions() {
     var ready = rows.filter(function (r) { return rowState(r) === 'ready'; }).length;
@@ -3338,9 +3358,14 @@ K.app = (function () {
     $('#import-all').textContent = ready > 1 ? 'Add all ' + ready + ' ready games' : 'Add ready game';
     $('#import-clear').disabled = finished === 0;
   }
+  var batchMode = false;
   async function addAllReady() {
     var list = rows.filter(function (r) { return rowState(r) === 'ready'; });
+    batchMode = list.length > 1;
     for (var i = 0; i < list.length; i++) await commitRow(list[i]);
+    batchMode = false;
+    var added = list.filter(function (r) { return r.done; }).length, failed = list.length - added;
+    if (list.length > 1) toast(added + ' game' + (added === 1 ? '' : 's') + ' added to your library.' + (failed ? ' ' + failed + ' could not be added; see the list.' : ''), failed ? 'err' : 'ok');
   }
 
   /* ---------------- USB / system ---------------- */
@@ -3366,8 +3391,9 @@ K.app = (function () {
     var cat = K.usb.state.catalog;
     var dismissed = localStorage.getItem('kerf:strip-dismissed') === '1';
     if (!cat || dismissed || localStorage.getItem('kerf:saved')) { strip.hidden = true; return; }
+    var busy = K.usb.state.installing || (await K.usb.pending()).length > 0;
     strip.textContent = '';
-    strip.appendChild(el('p', { text: 'You opened KERFINATOR from the USB drive. Your games are being copied into this browser. To keep playing after you unplug the USB, save KERFINATOR to this computer and open that copy next time.' }));
+    strip.appendChild(el('p', { text: 'You opened KERFINATOR from the USB drive. ' + (busy ? 'Its games are being copied into this browser.' : 'Its games are now stored in this browser.') + ' To keep playing after you unplug the USB, save KERFINATOR to this computer and open that copy next time.' }));
     strip.appendChild(el('button', { class: 'btn btn-primary btn-small', text: 'Save to this computer', onclick: saveLauncher }));
     strip.appendChild(el('button', { class: 'x', 'aria-label': 'Dismiss', text: '×', onclick: function () { localStorage.setItem('kerf:strip-dismissed', '1'); strip.hidden = true; } }));
     strip.hidden = false;
@@ -3589,7 +3615,12 @@ K.app = (function () {
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { K.lib.foldSessions(); refreshSoon(); } });
     setInterval(function () { if (document.visibilityState === 'visible') K.lib.foldSessions(); }, 30000);
     K.lib.onChange(refreshSoon);
-    K.usb.onChange(function (st) { renderInstall(st); if (currentView() === 'system') renderSystem(); if (!items.length) renderLibrary(); });
+    K.usb.onChange(function (st) {
+      renderInstall(st);
+      if (currentView() === 'system') renderSystem();
+      if (!items.length) renderLibrary();
+      if (!st.installing && !$('#strip').hidden) renderStrip();
+    });
   }
 
   async function start() {

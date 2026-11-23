@@ -169,10 +169,20 @@ K.importer = (function () {
         if (batch.length >= 300 || bytes > 48 * 1024 * 1024) await flush();
       }
       await flush();
+      // Integrity check: a file that could not be read (USB unplugged, no
+      // permission) is stored by the browser as an empty blob without error.
+      var expected = {};
+      files.forEach(function (f) { expected[f.path] = f.size; });
+      var bad = (await K.db.filesOf(id)).filter(function (r) { return r.b.size !== expected[r.p]; });
+      if (bad.length) {
+        var err = new Error('Some files could not be read (' + bad.slice(0, 3).map(function (r) { return r.p; }).join(', ') + (bad.length > 3 ? ', …' : '') + ').');
+        err.unreadable = true;
+        throw err;
+      }
     } catch (e) {
       try { await K.db.deleteFiles(id); } catch (x) {}
       if (e && e.name === 'QuotaExceededError') throw new Error('The browser ran out of storage space while importing. Free up disk space and try again.');
-      throw new Error('Saving the game failed: ' + (e.message || e) + '. If the game was on a USB drive, make sure it is still connected.');
+      throw new Error((e && e.unreadable ? e.message : 'Saving the game failed: ' + (e.message || e) + '.') + ' Nothing was added. If the game is on a USB drive, make sure it is still connected, then try again.');
     }
     var title = (opts.title || info.title || 'Untitled game').trim();
     var coverPath = opts.coverFile ? null : (opts.cover !== undefined ? opts.cover : info.cover);
