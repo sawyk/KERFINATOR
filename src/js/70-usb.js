@@ -43,10 +43,10 @@ K.usb = (function () {
     });
   }
 
-  function loadChunk(key, n) {
+  function loadChunk(key, dir, n) {
     return new Promise(function (res, rej) {
       window.KERFINATOR_CHUNK = function (k, i, list) { if (k === key && i === n) res(list); };
-      K.loadScript('library/' + encodeURIComponent(key) + '/' + n + '.js').then(function () {
+      K.loadScript('library/' + encodeURIComponent(dir) + '/' + n + '.js').then(function () {
         setTimeout(function () { rej(new Error('Pack ' + key + '/' + n + '.js is damaged.')); }, 0);
       }, function () { rej(new Error('The USB drive was removed, or pack ' + key + '/' + n + '.js is missing.')); });
     });
@@ -66,7 +66,7 @@ K.usb = (function () {
     await K.db.deleteFiles(id);
     var partial = {}, coverBlob = null;
     for (var n = 0; n < c.chunks; n++) {
-      var list = await loadChunk(c.key, n), puts = [];
+      var list = await loadChunk(c.key, c.dir || c.key, n), puts = [];
       for (var i = 0; i < list.length; i++) {
         var item = list[i], path = item[0], part = item[1], parts = item[2];
         var bytes = K.b64decode(item[3]), t = K.mimeOf(path);
@@ -124,10 +124,11 @@ K.usb = (function () {
     try { if (kind === 'dir') await dir.getDirectoryHandle(name); else await dir.getFileHandle(name); return true; } catch (e) { return false; }
   }
 
-  async function pack(key, files, dir, onProgress) {
+  async function pack(key, files, dir, onProgress, check) {
     var n = 0, cur = [], curBytes = 0, done = 0, total = files.reduce(function (a, f) { return a + f.size; }, 0) || 1;
     async function flush() {
       if (!cur.length) return;
+      check();
       var fh = await dir.getFileHandle(n + '.js', { create: true }), w = await fh.createWritable();
       await w.write('KERFINATOR_CHUNK(' + JSON.stringify(key) + ',' + n + ',[\n');
       for (var i = 0; i < cur.length; i++) {
@@ -135,7 +136,9 @@ K.usb = (function () {
         await w.write((i ? ',\n' : '') + '[' + JSON.stringify(cur[i].path) + ',' + cur[i].part + ',' + cur[i].parts + ',"' + b64 + '"]');
         done += cur[i].blob.size; onProgress(done / total);
       }
-      await w.write('\n]);\n'); await w.close();
+      await w.write('\n]);\n');
+      onProgress(done / total, 'saving');   // closing is when the browser really writes to the drive
+      await w.close();
       n++; cur = []; curBytes = 0;
     }
     for (var i = 0; i < files.length; i++) {
@@ -150,8 +153,18 @@ K.usb = (function () {
     return n;
   }
 
-  // root: FileSystemDirectoryHandle for the folder holding KERFINATOR.html
-  async function build(root, log) {
+  /* root: FileSystemDirectoryHandle for the folder holding KERFINATOR.html.
+     ctl.stopped = true stops the build at the next safe point.
+
+     Safe to interrupt: a changed game is packed into a NEW folder
+     (<game>-<fingerprint>), the catalog is written last, and old packs are
+     removed only after that. If the build stops, fails or the drive is
+     unplugged halfway, the previous catalog and its packs are untouched,
+     so the USB library keeps working exactly as before. */
+  async function build(root, log, ctl) {
+    function check() {
+      if (ctl && ctl.stopped) { var e = new Error('Stopped. The USB library still works exactly as it did before.'); e.stopped = true; throw e; }
+    }
     var gamesDir;
     try { gamesDir = await root.getDirectoryHandle('games'); }
     catch (e) { throw new Error('The folder "' + root.name + '" has no "games" folder. Choose the folder that contains KERFINATOR.html and games.'); }
@@ -161,7 +174,9 @@ K.usb = (function () {
     var out = [], used = {}, names = [];
     for await (var pair of gamesDir.entries()) if (pair[1].kind === 'directory' && pair[0][0] !== '.') names.push(pair);
     names.sort(function (a, b) { return a[0].localeCompare(b[0]); });
+    if (!names.length) log({ type: 'warn', text: 'The games folder is empty. Put each game in its own folder inside it.' });
     for (var i = 0; i < names.length; i++) {
+      check();
       var name = names[i][0], h = names[i][1];
       log({ type: 'step', text: 'Reading ' + name + '…' });
       var files = await K.importer.walkHandle(h, '', []);
@@ -174,30 +189,37 @@ K.usb = (function () {
       while (used[key]) key = base + '-' + (k++);
       used[key] = 1;
       var entry = {
-        key: key, title: info.title, entry: info.entry, cover: info.cover, fp: info.fp, size: info.size, files: info.count,
+        key: key, dir: key, title: info.title, entry: info.entry, cover: info.cover, fp: info.fp, size: info.size, files: info.count,
         chunks: 0, external: info.external, images: info.images.slice(0, 24), candidates: info.candidates.slice(0, 12)
       };
-      var old = prevByKey[key];
-      if (old && old.fp === info.fp && await exists(libDir, key, 'dir')) {
-        entry.chunks = old.chunks;
+      var old = prevByKey[key], oldDir = old && (old.dir || old.key);
+      if (old && old.fp === info.fp && await exists(libDir, oldDir, 'dir')) {
+        entry.chunks = old.chunks; entry.dir = oldDir;
         log({ type: 'ok', text: info.title + ' — unchanged' });
       } else {
-        if (await exists(libDir, key, 'dir')) await libDir.removeEntry(key, { recursive: true });
-        var dir = await libDir.getDirectoryHandle(key, { create: true });
-        entry.chunks = await pack(key, info.files, dir, function (p) { log({ type: 'progress', text: 'Packing ' + info.title + ' — ' + Math.round(p * 100) + '%' }); });
+        entry.dir = key + '-' + info.fp.slice(0, 8);
+        if (await exists(libDir, entry.dir, 'dir')) await libDir.removeEntry(entry.dir, { recursive: true });   // left over from an interrupted build
+        var dir = await libDir.getDirectoryHandle(entry.dir, { create: true });
+        var title = info.title;
+        entry.chunks = await pack(key, info.files, dir, function (p, phase) {
+          log({ type: 'progress', text: (phase === 'saving' ? 'Saving ' : 'Packing ') + title + ' to the drive — ' + Math.round(p * 100) + '%' });
+        }, check);
         log({ type: 'ok', text: info.title + ' — packed (' + K.formatBytes(info.size) + ')' });
       }
       out.push(entry);
     }
-    // remove packs of games that are no longer in games/
-    var keep = {}; out.forEach(function (e) { keep[e.key] = 1; });
-    for await (var p of libDir.entries()) {
-      if (p[1].kind === 'directory' && !keep[p[0]]) { await libDir.removeEntry(p[0], { recursive: true }); log({ type: 'ok', text: 'Removed old pack: ' + p[0] }); }
-    }
+    check();
+    log({ type: 'progress', text: 'Saving the game list…' });
     var cat = { format: 1, generated: new Date().toISOString(), games: out };
     var fh = await libDir.getFileHandle('catalog.js', { create: true }), w = await fh.createWritable();
     await w.write('/* KERFINATOR USB library catalog. Generated by KERFINATOR — do not edit by hand.\n   To change the games, edit the games folder and run "Build USB library" again. */\nKERFINATOR_CATALOG(' + JSON.stringify(cat, null, 1) + ');\n');
     await w.close();
+    // Only now that the new list is saved: remove packs nothing refers to any more.
+    var keep = {}; out.forEach(function (e) { keep[e.dir] = 1; });
+    var stale = [];
+    for await (var p of libDir.entries()) if (p[1].kind === 'directory' && !keep[p[0]]) stale.push(p[0]);
+    for (var j = 0; j < stale.length; j++) { try { await libDir.removeEntry(stale[j], { recursive: true }); } catch (e) {} }
+    if (stale.length) log({ type: 'ok', text: 'Cleaned up ' + stale.length + ' old pack' + (stale.length === 1 ? '' : 's') + '.' });
     return out;
   }
 

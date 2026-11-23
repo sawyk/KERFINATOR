@@ -161,7 +161,8 @@
             <li>Select <b>Build USB library</b> and choose the KERFINATOR folder on the USB drive.</li>
           </ol>
           <p class="fine">This packs the games into <b>KERFINATOR/library</b>, so they install by themselves on any laptop. Run it again after adding, changing or removing games. Optional: a <b>kerf.json</b> file in a game's folder sets its title, start page and cover, for example <code>{"title": "My Game", "entry": "index.html", "cover": "cover.png"}</code>.</p>
-          <div class="actions"><button id="build-usb" class="btn btn-primary">Build USB library</button></div>
+          <div class="actions"><button id="build-usb" class="btn btn-primary">Build USB library</button><button id="build-stop" class="btn btn-quiet" hidden>Stop</button></div>
+          <p id="build-note" class="fine build-note" hidden></p>
           <ol id="build-log" class="log" hidden></ol>
           <h3 class="danger-h">Erase KERFINATOR from this browser</h3>
           <p>Deletes every game, favorite, playtime record and save KERFINATOR stored in this browser. Files on the USB drive are not touched.</p>

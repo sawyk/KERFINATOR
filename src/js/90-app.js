@@ -549,29 +549,60 @@ K.app = (function () {
     $('#auto-install').checked = await K.db.kvGet('autoInstall', true);
     var lb = await K.db.kvGet('lastBackup', 0);
     $('#backup-text').textContent = lb ? 'Last backup: ' + new Date(lb).toLocaleDateString() + '.' : 'No backup yet.';
-    $('#build-usb').disabled = !window.showDirectoryPicker;
-    if (!window.showDirectoryPicker) $('#build-usb').title = 'Needs Microsoft Edge or Google Chrome';
+    renderBuildButton();
+  }
+  /* Build USB library. The button can never get stuck: while a build runs it
+     shows progress and a Stop button, and it always comes back afterwards. */
+  var building = null;
+  function renderBuildButton() {
+    var btn = $('#build-usb'), note = $('#build-note'), ok = !!window.showDirectoryPicker;
+    btn.disabled = !ok || !!building;
+    $('#build-stop').hidden = !building;
+    if (!building) btn.textContent = 'Build USB library';
+    note.hidden = ok;
+    if (!ok) note.textContent = 'This browser can\u2019t save to folders, so it can\u2019t build the USB library. Open KERFINATOR in Microsoft Edge or Google Chrome to build it. (Playing works in any of them.)';
   }
   async function buildUsb() {
+    if (building) return;
     var root;
     try { root = await window.showDirectoryPicker({ id: 'kerf-usb', mode: 'readwrite' }); }
-    catch (e) { if (e && e.name !== 'AbortError') toast('That folder can’t be used: ' + e.message, 'err'); return; }
-    var log = $('#build-log'), last = null;
+    catch (e) {
+      if (e && e.name === 'AbortError') return;
+      toast(e && e.name === 'SecurityError' ? 'The browser won\u2019t allow that folder. Keep KERFINATOR in a folder on the USB drive (not the drive itself) and choose that folder.' : 'That folder can\u2019t be used: ' + (e && e.message), 'err', 10000);
+      return;
+    }
+    var ctl = building = { stopped: false };
+    var log = $('#build-log'), last = null, lastProgress = Date.now(), warned = false, stopNow;
     log.hidden = false; log.textContent = '';
-    $('#build-usb').disabled = true;
+    renderBuildButton();
+    $('#build-usb').textContent = 'Building…';
     function line(m) {
+      if (ctl !== building) return;   // a stopped build that is still finishing in the background
+      lastProgress = Date.now();
       if (m.type === 'progress') { if (!last || !last.classList.contains('progress')) { last = el('li', { class: 'progress' }); log.appendChild(last); } last.textContent = m.text; }
       else { if (last && last.classList.contains('progress')) last.remove(); last = el('li', { class: m.type, text: m.text }); log.appendChild(last); }
       log.scrollTop = log.scrollHeight;
     }
+    var watchdog = setInterval(function () {
+      if (!warned && Date.now() - lastProgress > 45000) {
+        warned = true;
+        line({ type: 'warn', text: 'Still waiting for the USB drive. Slow drives can take a few minutes for big games. If nothing changes, select Stop, check the drive is plugged in, and try again.' });
+      }
+    }, 5000);
+    var stopped = new Promise(function (res) { stopNow = res; });
+    $('#build-stop').onclick = function () { ctl.stopped = true; stopNow(); };
     try {
-      var out = await K.usb.build(root, line);
+      var out = await Promise.race([K.usb.build(root, line, ctl), stopped.then(function () { var e = new Error('Stopped. The USB library still works exactly as it did before.'); e.stopped = true; throw e; })]);
       line({ type: 'ok', text: 'Done: ' + out.length + ' game' + (out.length === 1 ? '' : 's') + ' in the USB library. Anyone who opens KERFINATOR.html from this drive gets them automatically.' });
-      toast('USB library built: ' + out.length + ' games.', 'ok');
+      toast('USB library built: ' + out.length + ' game' + (out.length === 1 ? '' : 's') + '.', 'ok');
     } catch (e) {
-      line({ type: 'error', text: e.message || String(e) });
+      line({ type: e && e.stopped ? 'warn' : 'error', text: (e && e.message) || String(e) });
+      if (e && e.name === 'NotAllowedError') line({ type: 'warn', text: 'The browser wasn\u2019t allowed to save to the drive. Select Build USB library again and choose “Edit files” / “Allow” when asked.' });
+    } finally {
+      clearInterval(watchdog);
+      building = null;
+      renderBuildButton();
     }
-    $('#build-usb').disabled = false;
   }
   async function eraseAll() {
     var a = await ask({ title: 'Erase KERFINATOR from this browser?', body: 'Every game, favorite, playtime record and save stored by KERFINATOR in this browser will be deleted. This cannot be undone. Export a backup first if you might want your saves back.', ok: 'Erase everything', danger: true });

@@ -438,11 +438,53 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
     const log = [];
     const out = await K.usb.build(usb, (m) => log.push(m));
     const out2log = []; await K.usb.build(usb, (m) => out2log.push(m)); // second run: nothing re-packed
+    window.__mkDir = mkDir;
+    // A changed game, but the build is stopped halfway: the old library must be untouched.
+    const lib = await usb.getDirectoryHandle('library');
+    const catText = async () => (await (await lib.getFileHandle('catalog.js')).getFile()).text();
+    const dirs = async () => { const d = []; for await (const [n, h] of lib.entries()) if (h.kind === 'directory') d.push(n); return d.sort(); };
+    const catBefore = await catText(), dirsBefore = await dirs();
+    const ks = await gdir.getDirectoryHandle('kitchen-sink');
+    const xw = await (await ks.getFileHandle('extra.txt', { create: true })).createWritable(); await xw.write('changed'); await xw.close();
+    const ctl = { stopped: false }; let stopErr = null;
+    try { await K.usb.build(usb, (m) => { if (m.type === 'progress') ctl.stopped = true; }, ctl); } catch (e) { stopErr = e; }
+    const stoppedSafe = !!(stopErr && stopErr.stopped) && (await catText()) === catBefore && dirsBefore.every((d) => true) && (await dirs()).filter((d) => dirsBefore.includes(d)).length === dirsBefore.length;
+    // ...and a full build afterwards replaces the pack and cleans up
+    await K.usb.build(usb, () => {});
+    const dirsAfter = await dirs();
     const files = [];
     async function walk(d, pre) { for await (const [n, h] of d.entries()) { if (h.kind === 'directory') await walk(h, pre + n + '/'); else files.push([pre + n, await (await h.getFile()).text()]); } }
     await walk(await usb.getDirectoryHandle('library'), '');
-    return { count: out.length, log: log.map((l) => l.type + ': ' + l.text), log2: out2log.map((l) => l.type + ': ' + l.text), files };
+    return { count: out.length, log: log.map((l) => l.type + ': ' + l.text), log2: out2log.map((l) => l.type + ': ' + l.text), files, stoppedSafe, dirsBefore, dirsAfter };
   }, srcGames);
+  ok(built.stoppedSafe, 'a build stopped halfway leaves the previous USB library untouched');
+  ok(built.dirsAfter.length === 4 && built.dirsAfter.filter((d) => built.dirsBefore.includes(d)).length === 3, 'the next full build replaces the changed game and cleans up', [built.dirsBefore, built.dirsAfter]);
+
+  // The Build USB library button: shows progress, can be stopped, always comes back.
+  await page.evaluate(() => {
+    const usb = window.__mkDir('KERFINATOR');
+    window.__slowUsb = usb;
+    window.showDirectoryPicker = async () => usb;
+    (async () => {
+      const g = await (await usb.getDirectoryHandle('games', { create: true })).getDirectoryHandle('slow-game', { create: true });
+      const w = await (await g.getFileHandle('index.html', { create: true })).createWritable(); await w.write('<title>Slow</title>'.padEnd(4000, ' ')); await w.close();
+      // a drive that never finishes writing
+      const origDir = usb.getDirectoryHandle.bind(usb);
+      usb.getDirectoryHandle = async (n, o) => { const d = await origDir(n, o); if (n === 'library') { const gf = d.getDirectoryHandle.bind(d); d.getDirectoryHandle = async (a, b) => { const sub = await gf(a, b); const gfh = sub.getFileHandle.bind(sub); sub.getFileHandle = async (x, y) => { const fh = await gfh(x, y); fh.createWritable = async () => ({ async write() {}, close: () => new Promise(() => {}) }); return fh; }; return sub; }; } return d; };
+    })();
+  });
+  await page.click('.tab[data-view=system]');
+  await page.locator('details.advanced summary').click();
+  await page.click('#build-usb');
+  await page.waitForTimeout(800);
+  ok((await page.locator('#build-usb').innerText()).toLowerCase().includes('building') && (await page.locator('#build-usb').isDisabled()) && (await page.locator('#build-stop').isVisible()), 'while building, the button shows it is working and offers Stop');
+  await page.click('#build-stop');
+  await page.waitForTimeout(300);
+  ok(!(await page.locator('#build-usb').isDisabled()) && (await page.locator('#build-usb').innerText()).toLowerCase().includes('build usb library') && /Stopped/.test(await page.locator('#build-log').innerText()), 'Stop always gives the button back, even if the drive hangs');
+  await page.evaluate(() => { window.showDirectoryPicker = undefined; K.app.show('system'); });
+  await page.waitForTimeout(300);
+  ok(await page.locator('#build-note').isVisible() && (await page.locator('#build-usb').isDisabled()), 'a browser that cannot build explains why');
+  await page.evaluate(() => { delete window.showDirectoryPicker; K.app.show('library'); });
   ok(built.count === 4, 'builder packed the 4 valid games', built.count);
   ok(built.log.some((l) => /not-a-game: skipped/.test(l)), 'builder skips folders that are not games');
   ok(built.log.some((l) => /ambiguous: several possible start pages/.test(l)), 'builder warns about ambiguous start pages');
