@@ -221,7 +221,10 @@ K.player = (function () {
 
     window.__KERF_BOOT = {
       files: files, entryDir: docDir, launcherDir: K.launcherDir(), launcherUrl: K.launcherUrl(), launcherFile: K.launcherFile(),
-      gameId: gid, sessionId: sid, title: title, missing: staticMissing, blobs: blobs, subPage: !!page
+      gameId: gid, sessionId: sid, title: title, missing: staticMissing, blobs: blobs, subPage: !!page,
+      // no cover art and none chosen: take screenshots after 30 s and 2.5 min of visible play
+      autoShot: game.cover || user.thumb || (user.shotStage || 0) >= 2 ? [] : (user.shotStage === 1 ? [150000] : [30000, 150000]),
+      autoShotStage: user.shotStage || 0
     };
     var inject = SCRIPT_OPEN + '>(' + KERF_RUNTIME.toString() + ')(window.__KERF_BOOT,"window");try{delete window.__KERF_BOOT}catch(e){}' + SCRIPT_CLOSE;
     if (Object.keys(importMap.imports).length) {

@@ -278,7 +278,7 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
 .check input:checked::after { content: ""; width: 9px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
 
 /* ---------- system ---------- */
-.sys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; margin-top: 28px; }
+.sys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; margin-top: 28px; }
 .panel {
   background: var(--carbon); border: 1px solid var(--edge); padding: 20px 22px 22px; display: flex; flex-direction: column;
   clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
@@ -287,6 +287,7 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
 .panel h2 { font: 600 15px/1.3 var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; color: var(--white); }
 .panel p { margin: 0 0 10px; color: var(--steel); }
 .panel .fine { font-size: 13px; color: var(--steel-dim); }
+.panel .btn { white-space: normal; height: auto; min-height: 38px; padding-top: 9px; padding-bottom: 9px; text-align: center; line-height: 1.25; }
 .panel .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 10px; }
 .panel .meter { margin: 6px 0 8px; height: 6px; }
 .panel-danger { border-color: #3a1016; }
@@ -302,6 +303,24 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
 .log li.ok { color: var(--ok); }
 .log li.warn { color: #d9b46a; }
 .log li.error { color: #ff8a94; }
+.help details { border-top: 1px solid var(--edge); }
+.help details:last-child { border-bottom: 1px solid var(--edge); }
+.help summary { cursor: pointer; padding: 11px 4px; color: var(--chrome); list-style: none; display: flex; align-items: center; gap: 10px; }
+.help summary::-webkit-details-marker { display: none; }
+.help summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--crimson); border-bottom: 2px solid var(--crimson); transform: rotate(-45deg); transition: transform .15s; flex: none; }
+.help details[open] summary::before { transform: rotate(45deg); }
+.help summary:hover { color: var(--white); }
+.help details p { margin: 0 0 14px 21px; max-width: 72ch; }
+.advanced > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.advanced > summary::-webkit-details-marker { display: none; }
+.advanced > summary h2 { margin: 0; }
+.advanced > summary span { color: var(--steel-dim); font-size: 13px; }
+.advanced > summary::after { content: "Show"; margin-left: auto; font: 600 12px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--steel); }
+.advanced[open] > summary::after { content: "Hide"; }
+.advanced[open] > summary { margin-bottom: 14px; }
+.advanced h3 { font: 600 14px/1.3 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--chrome); margin: 8px 0 10px; }
+.advanced h3.danger-h { color: #ff8a94; margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--edge); }
+.advanced .actions { margin-top: 0; }
 .about { margin: 36px 0 0; color: var(--steel-dim); font-size: 13px; text-align: center; letter-spacing: .04em; }
 
 /* ---------- dialogs ---------- */
@@ -351,6 +370,10 @@ main { padding: 8px 28px 64px; max-width: 1680px; margin: 0 auto; }
   box-shadow: 0 12px 30px rgba(0, 0, 0, .6); animation: toast-in .25s var(--ease); font-size: 14px;
 }
 .toast.ok { border-left-color: var(--ok); }
+.toast { display: flex; align-items: center; gap: 14px; }
+.toast span { flex: 1; }
+.toast-act { flex: none; background: var(--gunmetal); border: 1px solid var(--edge-hi); color: var(--white); padding: 6px 12px; cursor: pointer; font: 600 12px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; }
+.toast-act:hover { border-color: var(--crimson); }
 .toast.err { border-left-color: var(--crimson); }
 .toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity .25s, transform .25s; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }

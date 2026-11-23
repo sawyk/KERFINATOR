@@ -21,12 +21,15 @@ K.app = (function () {
   };
 
   /* ---------------- shared helpers ---------------- */
-  function toast(msg, kind, ms) {
-    var t = el('div', { class: 'toast ' + (kind || ''), role: kind === 'err' ? 'alert' : 'status', text: msg });
+  // action: optional {label, run} shown as a button in the toast
+  function toast(msg, kind, ms, action) {
+    var t = el('div', { class: 'toast ' + (kind || ''), role: kind === 'err' ? 'alert' : 'status' }, [el('span', { text: msg })]);
+    function close() { t.classList.add('leaving'); setTimeout(function () { t.remove(); }, 300); }
+    if (action) t.appendChild(el('button', { class: 'toast-act', text: action.label, onclick: function () { close(); action.run(); } }));
     var box = $('#toasts');
     box.appendChild(t);
     while (box.children.length > 3) box.firstElementChild.remove();
-    setTimeout(function () { t.classList.add('leaving'); setTimeout(function () { t.remove(); }, 300); }, ms || (kind === 'err' ? 8000 : 4200));
+    setTimeout(close, ms || (action ? 9000 : kind === 'err' ? 8000 : 4200));
   }
   function download(blob, name) {
     var a = el('a', { href: URL.createObjectURL(blob), download: name });
@@ -55,7 +58,7 @@ K.app = (function () {
   // Object URLs for thumbnails, cached per game version so they're not leaked.
   var thumbCache = {};
   function thumbUrl(item) {
-    var key = item.id + ':' + (item.game.updated || 0) + ':' + (item.user.thumbAt || 0);
+    var key = item.id + ':' + (item.game.updated || 0) + ':' + (item.user.thumbAt || 0) + ':' + (item.user.shotAt || 0);
     var c = thumbCache[item.id];
     if (c && c.key === key) return c.url;
     if (c) URL.revokeObjectURL(c.url);
@@ -100,7 +103,14 @@ K.app = (function () {
     var it = byId[id];
     if (!it) return;
     if (it.game.installing) { toast('“' + it.title + '” is still being installed.', ''); return; }
-    if (!K.lib.launch(id)) toast('The browser blocked the game tab. Allow pop-ups for this page (icon at the right of the address bar), then try again.', 'err', 10000);
+    var r = K.lib.launch(id);
+    if (r === 'running') {
+      toast('“' + it.title + '” is already open in another tab. Playing it in two tabs at once can overwrite your progress.', '', 9000,
+        { label: 'Open anyway', run: function () { if (!K.lib.launch(id, true)) blocked(); } });
+    } else if (!r) blocked();
+  }
+  function blocked() {
+    toast('The browser blocked the game tab. Select the blocked pop-up icon at the right of the address bar, choose “Always allow”, then try again.', 'err', 12000);
   }
   async function toggleFav(id) {
     await K.db.updateUser(id, function (u) { u.fav = !u.fav; });
@@ -229,7 +239,7 @@ K.app = (function () {
     if (cands.indexOf(it.entry) < 0) cands.unshift(it.entry);
     cands.forEach(function (p) { sel.appendChild(el('option', { value: p, text: p })); });
     sel.value = it.entry;
-    sel.disabled = cands.length < 2;
+    $('#dg-entry-wrap').hidden = cands.length < 2;
     $('#dg-source').textContent = (g.source === 'usb' ? 'Installed from the USB library' : 'Imported') + ' on ' + new Date(g.added).toLocaleDateString() + '. Stored in this browser.';
     var fav = $('#dg-fav');
     fav.textContent = u.fav ? 'Remove from favorites' : 'Add to favorites';
@@ -473,7 +483,7 @@ K.app = (function () {
     renderInstall.reported = false;
     box.hidden = false;
     var pct = Math.round(st.progress * 100);
-    $('#install-label').textContent = 'Installing games from the USB drive: ' + st.current.title + ' (' + st.current.index + ' of ' + st.current.total + ')';
+    $('#install-label').textContent = 'Copying games from the USB drive: ' + st.current.title + ' (' + st.current.index + ' of ' + st.current.total + ')';
     $('#install-pct').textContent = pct + '%';
     $('#install-bar').style.width = pct + '%';
   }
@@ -481,10 +491,10 @@ K.app = (function () {
     var strip = $('#strip');
     var cat = K.usb.state.catalog;
     var dismissed = localStorage.getItem('kerf:strip-dismissed') === '1';
-    if (!cat || dismissed || localStorage.getItem('kerf:saved')) { strip.hidden = true; return; }
+    if (!cat || !cat.games.length || dismissed || localStorage.getItem('kerf:saved')) { strip.hidden = true; return; }
     var busy = K.usb.state.installing || (await K.usb.pending()).length > 0;
     strip.textContent = '';
-    strip.appendChild(el('p', { text: 'You opened KERFINATOR from the USB drive. ' + (busy ? 'Its games are being copied into this browser.' : 'Its games are now stored in this browser.') + ' To keep playing after you unplug the USB, save KERFINATOR to this computer and open that copy next time.' }));
+    strip.appendChild(el('p', { text: (busy ? 'Copying the USB drive\u2019s games to this computer. ' : 'The USB drive\u2019s games are on this computer now. ') + 'To play without the drive, save KERFINATOR here too.' }));
     strip.appendChild(el('button', { class: 'btn btn-primary btn-small', text: 'Save to this computer', onclick: saveLauncher }));
     strip.appendChild(el('button', { class: 'x', 'aria-label': 'Dismiss', text: '×', onclick: function () { localStorage.setItem('kerf:strip-dismissed', '1'); strip.hidden = true; } }));
     strip.hidden = false;
@@ -515,30 +525,30 @@ K.app = (function () {
         var est = await navigator.storage.estimate();
         var pct = est.quota ? Math.min(100, est.usage / est.quota * 100) : 0;
         $('#quota-bar').style.width = Math.max(pct, 0.5) + '%';
-        $('#quota-text').textContent = K.formatBytes(est.usage) + ' used of ' + K.formatBytes(est.quota) + ' this browser allows. ' + items.length + ' game' + (items.length === 1 ? '' : 's') + ' installed.';
+        $('#quota-text').textContent = items.length + ' game' + (items.length === 1 ? '' : 's') + ' using ' + K.formatBytes(est.usage) + '. Room for ' + K.formatBytes(Math.max(0, est.quota - est.usage)) + ' more.';
       } catch (e) {}
     }
     var persisted = false;
     try { persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : false; } catch (e) {}
     $('#persist-text').textContent = persisted
-      ? 'Protected: the browser will not delete this library to free up space.'
-      : 'Not protected yet: if the disk gets very full, the browser may clear this library. Protection is a browser decision; it may decline.';
+      ? 'Protected: the browser won\u2019t delete your games to free up disk space.'
+      : 'If the disk gets very full, the browser may delete your games to make room. Protect them to prevent that.';
     $('#persist').hidden = persisted;
     var saved = Number(localStorage.getItem('kerf:saved') || 0);
-    $('#saved-text').textContent = saved ? 'A copy was saved from this browser on ' + new Date(saved).toLocaleDateString() + '.' : '';
+    $('#saved-text').textContent = saved ? 'Saved on ' + new Date(saved).toLocaleDateString() + '. Open that copy of KERFINATOR.html to play without the drive.' : '';
     var cat = K.usb.state.catalog;
     if (cat) {
       var pend = await K.usb.pending();
-      $('#usb-text').textContent = 'This copy of KERFINATOR has a USB library with ' + cat.games.length + ' game' + (cat.games.length === 1 ? '' : 's') + '. ' +
-        (pend.length ? pend.length + ' still need' + (pend.length === 1 ? 's' : '') + ' to be installed in this browser.' : 'All of them are installed in this browser.');
+      $('#usb-text').textContent = 'This USB drive has ' + cat.games.length + ' game' + (cat.games.length === 1 ? '' : 's') + '. ' +
+        (pend.length ? pend.length + ' still need' + (pend.length === 1 ? 's' : '') + ' to be copied to this computer.' : 'All of them are on this computer.');
       $('#usb-install').disabled = !pend.length || K.usb.state.installing;
     } else {
-      $('#usb-text').textContent = 'No USB library next to this copy of KERFINATOR. That is normal for a copy saved to this computer. To add games, use Import or open KERFINATOR from the USB drive.';
+      $('#usb-text').textContent = 'This copy of KERFINATOR isn\u2019t on a USB drive with games (normal for a copy saved to this computer). To get new games, open KERFINATOR from the USB drive, or use Import.';
       $('#usb-install').disabled = true;
     }
     $('#auto-install').checked = await K.db.kvGet('autoInstall', true);
     var lb = await K.db.kvGet('lastBackup', 0);
-    $('#backup-text').textContent = lb ? 'Last backup: ' + new Date(lb).toLocaleString() + '.' : 'No backup made yet.';
+    $('#backup-text').textContent = lb ? 'Last backup: ' + new Date(lb).toLocaleDateString() + '.' : 'No backup yet.';
     $('#build-usb').disabled = !window.showDirectoryPicker;
     if (!window.showDirectoryPicker) $('#build-usb').title = 'Needs Microsoft Edge or Google Chrome';
   }
@@ -700,10 +710,13 @@ K.app = (function () {
     var foldTimer = null;
     window.addEventListener('storage', function (e) {
       if (!e.key) return;
-      if (e.key.indexOf('kerf:pt:') === 0) { clearTimeout(foldTimer); foldTimer = setTimeout(K.lib.foldSessions, 400); }
+      if (e.key.indexOf('kerf:pt:') === 0) { K.lib.refreshRunning(); clearTimeout(foldTimer); foldTimer = setTimeout(K.lib.foldSessions, 400); }
       if (e.key.indexOf('kerf:diag:') === 0 && openGameId && byId[openGameId]) fillGameDialog(byId[openGameId]);
+      if (e.key === 'kerf:shot') refreshSoon();
     });
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { K.lib.foldSessions(); refreshSoon(); } });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { K.lib.refreshRunning().then(K.lib.foldSessions); refreshSoon(); } });
+    window.addEventListener('focus', K.lib.refreshRunning);
+    setInterval(function () { if (document.visibilityState === 'visible') K.lib.refreshRunning(); }, 3000);
     setInterval(function () { if (document.visibilityState === 'visible') K.lib.foldSessions(); }, 30000);
     K.lib.onChange(refreshSoon);
     K.usb.onChange(function (st) {
@@ -726,6 +739,7 @@ K.app = (function () {
       empty.appendChild(el('p', { text: (e && e.message ? e.message + ' ' : '') + 'KERFINATOR needs browser storage to keep games. Private/guest windows and some managed browser policies block it. Open KERFINATOR in a normal window of Microsoft Edge or Google Chrome.' }));
       return;
     }
+    await K.lib.refreshRunning();
     await K.lib.foldSessions();
     await refresh();
     var cat = await K.usb.detect();

@@ -2,3 +2,6 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+# your own games and complete USB builds stay on your computer
+my-games/
+build/

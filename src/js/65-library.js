@@ -8,7 +8,9 @@ K.lib = (function () {
     users.forEach(function (u) { byId[u.id] = u; });
     return games.map(function (g) {
       var u = byId[g.id] || { id: g.id, fav: false, last: 0, play: 0, launches: 0 };
-      return { id: g.id, game: g, user: u, title: u.title || g.title, thumb: u.thumb || g.thumb, entry: u.entry || g.entry };
+      // cover: chosen by the player > the game's own art > screenshot from play > generated
+      var thumb = u.thumb || (!g.cover && u.shot) || g.thumb;
+      return { id: g.id, game: g, user: u, title: u.title || g.title, thumb: thumb, entry: u.entry || g.entry };
     });
   }
 
@@ -16,11 +18,45 @@ K.lib = (function () {
     return K.launcherUrl() + '?play=' + encodeURIComponent(id) + '&s=' + encodeURIComponent(sessionId);
   }
 
+  /* Is this game open in another tab right now? A tab reports a session
+     record ('ended' when it closes) and holds a Web Lock while it lives. The
+     lock list is refreshed often (it is asynchronous); the session record is
+     read on the spot, so a just-closed game is never reported as open. */
+  var liveSessions = null, justLaunched = {};
+  async function refreshRunning() {
+    if (!navigator.locks || !navigator.locks.query) return;
+    try {
+      var held = (await navigator.locks.query()).held, live = {};
+      held.forEach(function (l) { var m = /^kerf:run:[^:]+:(.+)$/.exec(l.name || ''); if (m) live[m[1]] = 1; });
+      liveSessions = live;
+    } catch (e) {}
+  }
+  function isRunning(id) {
+    var now = Date.now(), seen = false;
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || k.indexOf('kerf:pt:') !== 0) continue;
+      var r = null;
+      try { r = JSON.parse(localStorage.getItem(k)); } catch (e) {}
+      if (!r || r.g !== id) continue;
+      if (justLaunched[id] && r.t >= justLaunched[id]) seen = true;   // the new tab has reported in
+      if (r.end || now - r.t > 75000) continue;
+      if (liveSessions && !liveSessions[k.slice(8)] && now - r.t > 4000) continue;   // tab is gone (crashed or killed)
+      return true;
+    }
+    if (seen) delete justLaunched[id];
+    // opened moments ago and still loading
+    return !!(justLaunched[id] && now - justLaunched[id] < 8000);
+  }
+
   // Must run synchronously inside a click/keypress so the browser allows the tab.
-  function launch(id) {
+  // Returns true, false (pop-up blocked) or 'running' (already open; pass force to open anyway).
+  function launch(id, force) {
+    if (!force && isRunning(id)) return 'running';
     var sid = K.uid('s');
     var w = window.open(playUrl(id, sid), '_blank');
     if (!w) return false;
+    justLaunched[id] = Date.now();
     try { w.opener = null; } catch (e) {}
     K.db.updateUser(id, function (u) { u.last = Date.now(); u.launches = (u.launches || 0) + 1; }).then(changed);
     return true;
@@ -42,7 +78,11 @@ K.lib = (function () {
         if (!rec || !rec.g) { localStorage.removeItem(key); continue; }
         var ck = 'kerf:ptc:' + sid, credited = Number(localStorage.getItem(ck) || 0), delta = Math.max(0, (rec.ms || 0) - credited);
         if (delta > 0) { credits[rec.g] = (credits[rec.g] || 0) + delta; localStorage.setItem(ck, String(rec.ms)); }
-        if (rec.end || now - rec.t > 90000) { localStorage.removeItem(key); localStorage.removeItem(ck); }
+        var gone = liveSessions && !liveSessions[sid] && now - rec.t > 4000;
+        if (rec.end || gone || now - rec.t > 90000) {
+          localStorage.removeItem(key); localStorage.removeItem(ck);
+          if (justLaunched[rec.g] && rec.t >= justLaunched[rec.g]) delete justLaunched[rec.g];   // that tab has come and gone
+        }
       }
       for (var g in credits) { touched = true; await K.db.updateUser(g, function (u) { u.play = (u.play || 0) + credits[g]; }); }
       // orphaned credit markers
@@ -96,7 +136,7 @@ K.lib = (function () {
   }
 
   return {
-    all: all, launch: launch, playUrl: playUrl, foldSessions: foldSessions, diagnostics: diagnostics,
+    all: all, launch: launch, isRunning: isRunning, refreshRunning: refreshRunning, playUrl: playUrl, foldSessions: foldSessions, diagnostics: diagnostics,
     wipeSaves: wipeSaves, saveSize: saveSize, remove: remove, requestPersistence: requestPersistence,
     onChange: function (fn) { listeners.push(fn); }, changed: changed
   };

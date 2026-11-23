@@ -1,0 +1,4 @@
+Put each game in its own folder here, for example:
+  games\Retro Bowl\index.html
+
+Then open KERFINATOR.html, go to Settings and select "Build USB library".

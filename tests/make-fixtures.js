@@ -177,6 +177,16 @@ Promise.all([new Promise(function (r) { if (im.complete) r(im.naturalWidth > 0);
   /* 6. Single self-contained HTML file */
   w(path.join(root, 'tiny-game.html'), '<!DOCTYPE html><html><head><title>Tiny Single File</title></head><body><canvas></canvas><script>window.__T={single:"ok"};window.__DONE=true;</script></body></html>');
 
+  /* 5b. A WebGL game with no cover art (drawing a colourful grid every frame) */
+  w(path.join(root, 'webgl-shot/index.html'), `<!DOCTYPE html><html><head><title>WebGL Shot Test</title><style>html,body{margin:0;background:#000}canvas{width:100vw;height:100vh;display:block}</style></head><body><canvas width="640" height="480"></canvas><script>
+var gl = document.querySelector('canvas').getContext('webgl'); gl.enable(gl.SCISSOR_TEST);
+var f = 0;
+(function frame() { f++;
+  for (var y = 0; y < 6; y++) for (var x = 0; x < 8; x++) { gl.scissor(x * 80, y * 80, 80, 80); var k = (x * 7 + y * 13 + (f >> 5)) % 5; gl.clearColor([.9,.1,.2,.95,.2][k], [.1,.8,.2,.9,.3][k], [.2,.1,.9,.1,.8][k], 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+  requestAnimationFrame(frame); })();
+window.__DONE = true;
+</script></body></html>`);
+
   /* 6a. Single files that rebuild themselves with document.write (like Ruffle/JSZip
      packs): the page has no <head> of its own, only one inside a JS string. */
   w(path.join(root, 'singles/self-writer.html'), `<html>

@@ -3,7 +3,7 @@
    (synthesised WAV sound effects and a PNG sprite atlas). Developer tool. */
 'use strict';
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
-const D = path.resolve(__dirname, '..', 'demo-games');
+const D = path.resolve(__dirname, '..', 'tests', 'demo-games');
 
 function wav(file, seconds, fn) {
   const rate = 22050, n = Math.floor(rate * seconds), data = Buffer.alloc(n * 2);

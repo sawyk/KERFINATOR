@@ -706,24 +706,110 @@ function KERF_RUNTIME(C, MODE) {
     };
   });
 
+  /* ---- automatic cover art ----
+     Games that come without cover art get a real screenshot instead of a
+     generated plate: after some visible play, the largest canvas on screen
+     is captured (right after the game draws a frame, so WebGL content is
+     still there), checked for not being a blank or loading screen, and
+     saved with the game in KERFINATOR's library. */
+  var shotPlan = (C.autoShot || []).slice(), shotWanted = false, shotDraw = null, shotTries = 0;
+  if (shotPlan.length && G.requestAnimationFrame) {
+    var oRAF = G.requestAnimationFrame;
+    G.requestAnimationFrame = function (cb) {
+      return oRAF.call(G, typeof cb !== 'function' ? cb : function (t) { cb(t); if (shotWanted) grabFrame(); });
+    };
+  }
+  function biggestCanvas() {
+    var best = null, area = 0;
+    (function scan(root, depth) {
+      var cs = root.querySelectorAll('canvas');
+      for (var i = 0; i < cs.length; i++) {
+        var r = cs[i].getBoundingClientRect(), a = r.width * r.height;
+        if (a > area && r.width >= 160 && r.height >= 120) { best = cs[i]; area = a; }
+      }
+      if (depth < 3) { var all = root.querySelectorAll('*'); for (var j = 0; j < all.length; j++) if (all[j].shadowRoot) scan(all[j].shadowRoot, depth + 1); }
+    })(D, 0);
+    return best;
+  }
+  function grabFrame() {
+    var src = biggestCanvas();
+    if (!src || !src.width || !src.height) return;
+    if (!shotDraw) { shotDraw = D.createElement('canvas'); shotDraw.width = 640; shotDraw.height = 480; }
+    var g = shotDraw.getContext('2d'), sw = src.width, sh = src.height, k = Math.max(640 / sw, 480 / sh), cw = 640 / k, ch = 480 / k;
+    try { g.drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, 640, 480); shotDraw.__has = true; } catch (e) {}
+  }
+  function looksBlank(cv) {
+    try {
+      var t = D.createElement('canvas'); t.width = 32; t.height = 24;
+      var g = t.getContext('2d'); g.drawImage(cv, 0, 0, 32, 24);
+      var d = g.getImageData(0, 0, 32, 24).data, n = d.length / 4, sum = 0, sq = 0;
+      for (var i = 0; i < d.length; i += 4) { var l = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; sum += l; sq += l * l; }
+      var mean = sum / n;
+      return Math.sqrt(Math.max(0, sq / n - mean * mean)) < 14;
+    } catch (e) { return true; }   // unreadable (cross-origin content): don't use it
+  }
+  function requestShot() {
+    if (shotWanted) return;
+    shotWanted = true;
+    if (shotDraw) shotDraw.__has = false;
+    setTimeout(function () {
+      if (!shotDraw || !shotDraw.__has) grabFrame();   // games that draw without requestAnimationFrame
+      shotWanted = false;
+      if (!shotDraw || !shotDraw.__has || looksBlank(shotDraw)) {
+        if (++shotTries > 6) shotPlan.shift();          // give up on this stage
+        else shotPlan[0] += 20000;                      // try again a bit later
+        return;
+      }
+      var stage = (C.autoShotStage || 0) + 1 + (C.autoShot.length - shotPlan.length);
+      shotPlan.shift(); shotTries = 0;
+      shotDraw.toBlob(function (blob) { if (blob) saveShot(blob, stage); }, 'image/webp', 0.85);
+    }, 1000);
+  }
+  function saveShot(blob, stage) {
+    try {
+      var req = (typeof oIdbOpen === 'function' ? oIdbOpen : IDBFactory.prototype.open).call(indexedDB, 'kerfinator');
+      req.onsuccess = function () {
+        var db = req.result;
+        try {
+          var tx = db.transaction('user', 'readwrite'), st = tx.objectStore('user');
+          st.get(C.gameId).onsuccess = function (e) {
+            var u = e.target.result || { id: C.gameId, fav: false, last: 0, play: 0, launches: 0 };
+            if (u.thumb) return;                        // the player chose a cover themselves
+            u.shot = blob; u.shotAt = Date.now(); u.shotStage = stage;
+            st.put(u);
+          };
+          tx.oncomplete = function () { db.close(); try { realLS.setItem('kerf:shot', C.gameId + ':' + Date.now()); } catch (e) {} };
+          tx.onerror = function () { db.close(); };
+        } catch (e) { db.close(); }
+      };
+    } catch (e) {}
+  }
+
   /* ---- playtime tracking ----
      Only time while the tab is actually visible counts. The running total
      for this session is written to a session record; KERFINATOR folds it
      into the library and deletes the record once the session ends. */
   var setI = G.setInterval.bind(G);
   if (realLS && C.sessionId) {
-    var sKey = 'kerf:pt:' + C.sessionId, acc = 0, last = Date.now(), vis = D.visibilityState === 'visible';
+    var sKey = 'kerf:pt:' + C.sessionId, acc = 0, last = Date.now(), vis = D.visibilityState === 'visible', ended = false;
+    // When a tab closes the browser fires pagehide and then visibilitychange;
+    // once the session has ended it must stay ended.
     var tick = function (end) {
       var now = Date.now();
+      if (end) ended = true;
       if (vis) acc += Math.max(0, Math.min(now - last, 15000));
       last = now; vis = D.visibilityState === 'visible';
-      try { realLS.setItem(sKey, JSON.stringify({ g: C.gameId, ms: acc, t: now, end: !!end })); } catch (e) {}
+      try { realLS.setItem(sKey, JSON.stringify({ g: C.gameId, ms: acc, t: now, end: ended })); } catch (e) {}
+      if (!end && shotPlan.length && acc >= shotPlan[0]) requestShot();
     };
     tick(false);
     setI(function () { tick(false); }, 5000);
     D.addEventListener('visibilitychange', function () { tick(false); });
     G.addEventListener('pagehide', function () { tick(true); });
-    G.addEventListener('pageshow', function (e) { if (e.persisted) { last = Date.now(); vis = D.visibilityState === 'visible'; tick(false); } });
+    G.addEventListener('pageshow', function (e) { if (e.persisted) { ended = false; last = Date.now(); vis = D.visibilityState === 'visible'; tick(false); } });
+    // Held for as long as this tab lives; the browser releases it however the
+    // tab ends (closed, crashed, killed), so the launcher always knows.
+    try { if (navigator.locks) navigator.locks.request('kerf:run:' + C.gameId + ':' + C.sessionId, function () { return new Promise(function () {}); }).catch(function () {}); } catch (e) {}
   }
 
   /* ---- diagnostics: tell the player clearly when something can't load ---- */

@@ -30,7 +30,7 @@
     <nav class="tabs" aria-label="Sections">
       <button class="tab is-active" data-view="library" aria-current="page">Library</button>
       <button class="tab" data-view="import">Import</button>
-      <button class="tab" data-view="system">System</button>
+      <button class="tab" data-view="system">Settings</button>
     </nav>
     <label class="search">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
@@ -86,7 +86,7 @@
           <button id="pick-folder" class="btn btn-primary">Choose a game folder</button>
           <button id="pick-files" class="btn">Choose .zip or .html files</button>
         </div>
-        <p class="dz-note">HTML5 games only. Flash (.swf), Windows programs (.exe) and .rar/.7z archives can't run in a browser.</p>
+        <p class="dz-note">Browser (HTML5) games only. Games you add stay on this computer and work without the USB drive.</p>
         <input id="in-folder" type="file" webkitdirectory multiple hidden>
         <input id="in-files" type="file" multiple accept=".zip,.html,.htm,application/zip,text/html" hidden>
       </div>
@@ -98,35 +98,19 @@
       </div>
     </section>
 
-    <!-- SYSTEM -->
+    <!-- SETTINGS -->
     <section id="view-system" class="view" hidden>
       <div class="sys-grid">
         <section class="panel">
-          <h2>Storage on this computer</h2>
-          <p>Your games, favorites, playtime and saves live inside this browser on this computer, not on the USB drive. Other browsers and other Windows accounts have their own separate library.</p>
-          <div class="meter"><i id="quota-bar"></i></div>
-          <p id="quota-text" class="fine"></p>
-          <p id="persist-text" class="fine"></p>
-          <div class="actions"><button id="persist" class="btn">Protect from automatic cleanup</button></div>
-        </section>
-
-        <section class="panel">
           <h2>Play without the USB drive</h2>
-          <p>Save a copy of KERFINATOR to this computer (for example your Desktop). Open that copy next time: it shows the same library, even with the USB unplugged.</p>
+          <p>Your games are already stored on this computer. Save KERFINATOR here too (your Desktop is a good place), then open that copy next time.</p>
           <p id="saved-text" class="fine"></p>
-          <div class="actions"><button id="save-launcher" class="btn btn-primary">Save KERFINATOR to this computer</button></div>
+          <div class="actions"><button id="save-launcher" class="btn btn-primary">Save to this computer</button></div>
         </section>
 
         <section class="panel">
-          <h2>USB library</h2>
-          <p id="usb-text">KERFINATOR was opened from a copy without a USB library.</p>
-          <label class="check"><input id="auto-install" type="checkbox" checked> <span>Install new USB games automatically</span></label>
-          <div class="actions"><button id="usb-install" class="btn" disabled>Install USB games now</button></div>
-        </section>
-
-        <section class="panel">
-          <h2>Backup and restore</h2>
-          <p>A backup holds favorites, playtime, custom titles and covers, and every game's save data. It doesn't include the game files: re-import those, or install them again from the USB.</p>
+          <h2>Back up your saves</h2>
+          <p>A backup file keeps your progress safe and lets you move it to another computer.</p>
           <p id="backup-text" class="fine"></p>
           <div class="actions">
             <button id="backup" class="btn btn-primary">Export backup</button>
@@ -135,35 +119,56 @@
           </div>
         </section>
 
-        <section class="panel panel-wide">
-          <h2>Prepare a USB drive</h2>
-          <ol class="steps">
-            <li>Copy the whole <b>KERFINATOR</b> folder to the USB drive.</li>
-            <li>Put each game in its own folder inside <b>KERFINATOR/games</b>.</li>
-            <li>Select <b>Build USB library</b> and choose the KERFINATOR folder on the USB.</li>
-          </ol>
-          <p class="fine">Building packs every game into <b>KERFINATOR/library</b> so that, on any laptop, KERFINATOR installs them automatically with no clicks. Run it again whenever you add, change or remove games. Optional: a <b>kerf.json</b> file in a game folder sets its title, start page and cover, for example <code>{"title": "My Game", "entry": "index.html", "cover": "cover.png"}</code>.</p>
-          <div class="actions"><button id="build-usb" class="btn btn-primary">Build USB library</button></div>
-          <ol id="build-log" class="log" hidden></ol>
+        <section class="panel">
+          <h2>Storage</h2>
+          <div class="meter"><i id="quota-bar"></i></div>
+          <p id="quota-text" class="fine"></p>
+          <p id="persist-text" class="fine"></p>
+          <div class="actions"><button id="persist" class="btn">Protect my games</button></div>
         </section>
 
         <section class="panel">
-          <h2>Good to know</h2>
-          <ul class="facts">
-            <li>Works offline in Microsoft Edge, Google Chrome and other Chromium browsers. No installation, no admin rights, nothing leaves this computer.</li>
-            <li>Clearing the browser's site data, or using a private/guest window, deletes the library. Keep a backup.</li>
-            <li>A few games need web-server-only features (such as multi-threaded Godot 4 or Unity builds) or online services. KERFINATOR tells you when a game hits one of these limits.</li>
-            <li>Games run in their own tab. Press F11 for fullscreen or use the game's own fullscreen button.</li>
-          </ul>
+          <h2>Games on the USB drive</h2>
+          <p id="usb-text"></p>
+          <label class="check"><input id="auto-install" type="checkbox" checked> <span>Install new USB games automatically</span></label>
+          <div class="actions"><button id="usb-install" class="btn" disabled>Install USB games now</button></div>
         </section>
 
-        <section class="panel panel-danger">
-          <h2>Erase KERFINATOR from this browser</h2>
-          <p>Deletes every game, favorite, playtime record and save stored by KERFINATOR in this browser. Files on the USB drive are not touched.</p>
-          <div class="actions"><button id="erase" class="btn btn-danger">Erase everything…</button></div>
+        <section class="panel panel-wide help">
+          <h2>Help</h2>
+          <details><summary>Where are my games and saves?</summary>
+            <p>Inside this browser on this computer, not on the USB drive. Edge and Chrome each keep their own library, and so does each Windows account. Clearing the browser's site data or using a private window removes it, so export a backup now and then.</p></details>
+          <details><summary>A game is black, silent or won't start</summary>
+            <p>Click inside the game once: browsers keep sound, and some games, paused until you do. If it still won't start, select ⋯ on the game's card. KERFINATOR shows any problem it found there.</p></details>
+          <details><summary>A game says it's offline or not connected</summary>
+            <p>KERFINATOR never uses the internet, so online extras like accounts, leaderboards and ads can't work. The game itself still plays.</p></details>
+          <details><summary>How do I add more games?</summary>
+            <p>Open Import and drop in a game folder, a .zip file or an .html file. Only browser games (HTML5) work: not Flash .swf files on their own, .exe programs or .rar archives.</p></details>
+          <details><summary>Can I play on another computer?</summary>
+            <p>Yes. Plug in the USB drive there and open KERFINATOR.html; the games install by themselves. To bring your progress along, export a backup here and restore it there.</p></details>
+          <details><summary>How do I play fullscreen?</summary>
+            <p>Press F11 in the game's tab, or use the game's own fullscreen button. Press F11 or Esc to leave.</p></details>
+          <details><summary>Two copies of a game are open</summary>
+            <p>Close one. Two tabs of the same game can overwrite each other's progress; KERFINATOR warns you before opening a second one.</p></details>
         </section>
+
+        <details class="panel panel-wide advanced">
+          <summary><h2>Advanced</h2><span>Preparing a USB drive, erasing everything</span></summary>
+          <h3>Prepare a USB drive</h3>
+          <ol class="steps">
+            <li>Copy the whole <b>KERFINATOR</b> folder to the USB drive.</li>
+            <li>Put each game in its own folder inside <b>KERFINATOR/games</b>. A <b>cover.png</b> or <b>cover.jpg</b> next to a game becomes its cover.</li>
+            <li>Select <b>Build USB library</b> and choose the KERFINATOR folder on the USB drive.</li>
+          </ol>
+          <p class="fine">This packs the games into <b>KERFINATOR/library</b>, so they install by themselves on any laptop. Run it again after adding, changing or removing games. Optional: a <b>kerf.json</b> file in a game's folder sets its title, start page and cover, for example <code>{"title": "My Game", "entry": "index.html", "cover": "cover.png"}</code>.</p>
+          <div class="actions"><button id="build-usb" class="btn btn-primary">Build USB library</button></div>
+          <ol id="build-log" class="log" hidden></ol>
+          <h3 class="danger-h">Erase KERFINATOR from this browser</h3>
+          <p>Deletes every game, favorite, playtime record and save KERFINATOR stored in this browser. Files on the USB drive are not touched.</p>
+          <div class="actions"><button id="erase" class="btn btn-danger">Erase everything…</button></div>
+        </details>
       </div>
-      <p class="about">KERFINATOR <span id="version"></span>. Down with Deutsch.</p>
+      <p class="about">KERFINATOR <span id="version"></span>. Works offline. Nothing you do here leaves this computer. Down with Deutsch.</p>
     </section>
   </main>
 </div>
@@ -182,7 +187,7 @@
         <div><dt>Launches</dt><dd id="dg-launches"></dd></div>
         <div><dt>Size</dt><dd id="dg-size"></dd></div>
       </dl>
-      <label class="field"><span>Start page</span><select id="dg-entry"></select></label>
+      <label id="dg-entry-wrap" class="field"><span>Start page</span><select id="dg-entry"></select></label>
       <p id="dg-source" class="fine"></p>
       <div id="dg-diag" class="diag" hidden></div>
     </div>

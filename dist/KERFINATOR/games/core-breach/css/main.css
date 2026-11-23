@@ -1,4 +1,0 @@
-html, body { margin: 0; height: 100%; background: radial-gradient(ellipse at 50% 40%, #16080b, #050506 70%); color: #dfe3e8; font: 600 15px/1 system-ui, "Segoe UI", sans-serif; overflow: hidden; }
-canvas { position: absolute; inset: 0; margin: auto; max-width: 100vw; max-height: calc(100vh - 40px); aspect-ratio: 4 / 3; height: auto; cursor: none; }
-#hud { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: space-between; padding: 0 20px; letter-spacing: .12em; text-transform: uppercase; color: #8b929c; }
-#msg { color: #ff5a66; }

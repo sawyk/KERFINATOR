@@ -4,15 +4,23 @@
 
 An offline HTML5 game library that lives on a USB drive, needs no installation, no admin rights and no internet, and keeps working after the USB drive is unplugged.
 
-The finished, ready-to-copy application is in **[`dist/KERFINATOR/`](dist/KERFINATOR)**. Copy that whole folder to a USB drive. End-user instructions are in [`dist/KERFINATOR/READ ME FIRST.txt`](docs/READ%20ME%20FIRST.txt).
+The ready-to-copy launcher is in **[`dist/KERFINATOR/`](dist/KERFINATOR)** (no games included). Copy that whole folder to a USB drive, put game folders in `games/`, then open `KERFINATOR.html` → Settings → Advanced → **Build USB library**. End-user instructions are in [`READ ME FIRST.txt`](docs/READ%20ME%20FIRST.txt).
 
 ```
 KERFINATOR/
   KERFINATOR.html      ← open this (the entire app: one self-contained file)
   READ ME FIRST.txt
-  games/               ← maintainer drops game folders here
+  games/               ← one folder per game (a cover.png/.jpg next to it becomes its cover)
   library/             ← generated "USB library" (auto-installs on any laptop)
 ```
+
+To build a complete USB folder from a folder of games on your own computer (developer tool, needs Node.js):
+
+```bash
+node tools/build.js --games my-games --out build/KERFINATOR
+```
+
+`my-games/` and `build/` are git-ignored: games stay on your computer and are never pushed to the repository.
 
 ---
 
@@ -23,7 +31,7 @@ A web page opened from a file (`file://`) runs under strict browser rules. Every
 | Need | What the browser allows from `file://` | What KERFINATOR does |
 |---|---|---|
 | Read game files next to the launcher | `fetch()`/XHR of `file://` are **blocked**; directory listing is impossible. `<script src>` of neighbouring files **is** allowed. | The USB carries games pre-packed as script files (`library/`). They install with **zero clicks** on first open. |
-| Keep games after the USB is removed | IndexedDB and localStorage work on `file://`, and Chromium gives **all `file://` pages one shared storage area** per browser profile. | Games are stored in IndexedDB. Any copy of `KERFINATOR.html` on that computer (USB, Desktop, Downloads) sees the same library. "Save KERFINATOR to this computer" writes a copy. |
+| Keep games after the USB is removed | IndexedDB and localStorage work on `file://`, and Chromium gives **all `file://` pages one shared storage area** per browser profile. | Games are stored in IndexedDB. Any copy of `KERFINATOR.html` on that computer (USB, Desktop, Downloads) sees the same library. "Save to this computer" writes a copy. |
 | Run multi-file games | No Service Worker, no local server. Blob URLs work (fetch, XHR, workers, WebGL textures, no canvas tainting) but are not hierarchical. | Each game runs in its own tab through a **compatibility runtime** that maps every relative path to the right stored file. |
 | Separate tab, independent fullscreen | `window.open` from a click works; the new tab is a normal top-level page. | `KERFINATOR.html?play=<id>` turns itself into the game (`document.open/write`). There's no wrapper UI, so F11 and the game's own fullscreen work as usual. |
 | Game saves | Storage works, but is shared by every `file://` page. | Each game's localStorage keys, IndexedDB databases and cookies are transparently **namespaced per game**. |
@@ -38,11 +46,13 @@ This is injected as the first script of every game page (and into its Workers). 
 - **Engine compatibility.** Unity-style `*.gz` builds are decompressed as a web server would. `location.protocol` checks that refuse `file:` see `https:`.
 - **Saves.** Per-game namespacing of storage, IndexedDB and emulated cookies.
 - **Playtime.** Counted only while the game tab is visible, and never after it closes.
+- **Automatic covers.** Games without cover art get a real screenshot after 30 s and 2.5 min of visible play (captured right after a frame, so WebGL works), checked so blank or loading screens aren't used.
+- **One copy at a time.** Each game tab holds a Web Lock, so KERFINATOR knows exactly which games are open (even after a crash) and warns before opening a second copy that could overwrite progress.
 - **Diagnostics.** If a game is missing files, tries to reach the internet, or needs a server-only feature, a small notice appears in the game tab and the launcher shows the details.
 
 ### Verified (automated test suite)
 
-`npm test` runs `tests/e2e.js` on real Chromium against `file://` with the network blocked. **110 checks** cover:
+`npm test` runs `tests/e2e.js` on real Chromium against `file://` with the network blocked. **116 checks** cover:
 
 - Zero-click USB install.
 - Import of folders, `.zip` archives (nested wrapper folder, Unicode names), single `.html` files (including several picked at once, and self-unpacking single-file packs over 8 MB), drag-and-drop and folder collections.
@@ -51,7 +61,7 @@ This is injected as the first script of every game page (and into its Workers). 
 - Every loading path above, including WebGL textures, Web Audio, WASM streaming, workers with `importScripts`, ES modules with import maps and dynamic imports, gzip builds, and links between game pages.
 - **A real Phaser 3 game** (WebGL renderer, loader, spritesheets, audio).
 - Save persistence and per-game isolation (localStorage, IndexedDB, cookies).
-- Playtime accuracy (counts while open, stops when closed).
+- Playtime accuracy (counts while open, stops when closed); running-game detection, including crashed tabs; screenshot covers from a WebGL game.
 - Recently played, favorites, search and renaming.
 - Backup and restore of saves (including IndexedDB values with `Date`/`Uint8Array`).
 - **Deleting the USB drive and continuing from a Desktop copy.**
@@ -77,7 +87,7 @@ Not automatable, therefore not verified by the suite: the native folder picker o
 
 ## Maintaining the library
 
-- **On the USB:** put each game in its own folder under `games/`, then **System → Build USB library**. Re-run after any change; unchanged games are skipped. Optional `kerf.json` per game: `{"title": "…", "entry": "index.html", "cover": "cover.png"}`.
+- **On the USB:** put each game in its own folder under `games/`, then **Settings → Advanced → Build USB library**. Re-run after any change; unchanged games are skipped. Optional `kerf.json` per game: `{"title": "…", "entry": "index.html", "cover": "cover.png"}`.
 - **On one computer:** the **Import** tab (drag and drop, or the buttons).
 - No code changes or rebuilds are ever needed to add games.
 
@@ -106,4 +116,4 @@ npm install            # dev only: Phaser, for the real-engine test
 npm test               # end-to-end suite (Playwright + Chromium)
 ```
 
-`tools/gen-demo-assets.js` regenerates the demo games' sound and sprite files. The three bundled games (*Deutsch Destroyer*, *Core Breach*, *Signal Lost*) are original. Each uses a different structure (classic scripts plus assets; ES modules plus import map plus IndexedDB; single file).
+`tests/demo-games/` holds three small original games (*Deutsch Destroyer*, *Core Breach*, *Signal Lost*) used by the test suite as a USB library; `tools/gen-demo-assets.js` regenerates their sound and sprite files. Each uses a different structure (classic scripts plus assets; ES modules plus import map plus IndexedDB; single file).

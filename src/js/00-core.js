@@ -1,9 +1,9 @@
 /* KERFINATOR core: namespace, small utilities, MIME table. */
 'use strict';
 var K = window.K = {
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   // Captured before the launcher touches the DOM: the exact source of this
-  // file, used by "Save KERFINATOR to this computer".
+  // file, used by "Save to this computer".
   SOURCE: '<!DOCTYPE html>\n' + document.documentElement.outerHTML
 };
 
