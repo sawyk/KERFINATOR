@@ -109,8 +109,14 @@ K.importer = (function () {
           pkgs = K.analyze.split(s.files, s.name);
         } else if (s.kind === 'loose') {
           var htmls = s.files.filter(function (f) { return K.isHTML(f.path); });
-          var nm = htmls.length ? htmls[0].path.replace(/\.[^.]+$/, '') : (s.files[0] ? s.files[0].path : 'Imported game');
-          pkgs = [{ name: nm, files: K.analyze.clean(s.files) }];
+          var assets = s.files.filter(function (f) { return !K.isHTML(f.path) && !/\.(txt|md|url|nfo)$/i.test(f.path); });
+          if (htmls.length > 1 && !assets.length) {
+            // Several self-contained .html files picked together: one game each.
+            pkgs = htmls.map(function (f) { return { name: f.path.replace(/\.[^.]+$/, ''), files: K.analyze.clean([f]) }; });
+          } else {
+            var nm = htmls.length ? htmls[0].path.replace(/\.[^.]+$/, '') : (s.files[0] ? s.files[0].path : 'Imported game');
+            pkgs = [{ name: nm, files: K.analyze.clean(s.files) }];
+          }
         }
       } catch (e) {
         items.push({ name: s.name || (s.file && s.file.name) || 'Import', error: e.message || String(e) });

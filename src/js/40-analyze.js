@@ -89,6 +89,31 @@ K.analyze = (function () {
     return s;
   }
 
+  /* Read what matters from a page using its real tags only. Text inside
+     scripts is skipped, so HTML embedded in JavaScript strings (common in
+     single-file game packs) is never mistaken for the page itself. */
+  function scanHTML(text) {
+    var r = { title: null, hasCode: false, refresh: null, image: null, icon: null, hosts: {} };
+    function a(attrs, n) { for (var i = 0; i < attrs.length; i++) if (attrs[i].lname === n) return attrs[i].value; return null; }
+    K.runtimeHelpers.rewriteHTML(text, '', function () { return null; }, {
+      tag: function (tag, attrs) {
+        if (tag === 'canvas' || tag === 'script') r.hasCode = true;
+        if (tag === 'meta') {
+          var he = (a(attrs, 'http-equiv') || '').toLowerCase(), pn = (a(attrs, 'property') || a(attrs, 'name') || '').toLowerCase(), ct = a(attrs, 'content');
+          if (he === 'refresh' && ct && !r.refresh) { var mm = /url\s*=\s*['"]?([^'"\s;]+)/i.exec(ct); if (mm) r.refresh = mm[1]; }
+          if ((pn === 'og:image' || pn === 'twitter:image') && ct && !r.image) r.image = ct;
+        }
+        if (tag === 'link' && /icon/i.test(a(attrs, 'rel') || '') && a(attrs, 'href') && !r.icon) r.icon = a(attrs, 'href');
+        var u = (tag === 'script' && a(attrs, 'src')) || (tag === 'link' && /stylesheet|preload|modulepreload/i.test(a(attrs, 'rel') || '') && a(attrs, 'href'));
+        var hm = u && /^(?:https?:)?\/\/([^\/?#]+)/i.exec(u);
+        if (hm) r.hosts[hm[1].toLowerCase()] = 1;
+        return true;
+      },
+      raw: function (tag, attrs, content) { if (tag === 'title' && r.title === null) r.title = content; return null; }
+    });
+    return r;
+  }
+
   function findRef(files, ref, fromDir) {
     var r = K.runtimeHelpers.staticRef(ref, fromDir);
     if (!r) return null;
@@ -127,17 +152,17 @@ K.analyze = (function () {
     var texts = {};
     for (var i = 0; i < cands.length && i < 8; i++) {
       var c = cands[i];
-      if (c.size > 8 * 1024 * 1024) continue;
-      var t = await K.readHTMLText(c.file);
-      texts[c.path] = t;
-      var tm = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(t);
-      c.title = tm ? cleanTitle(tm[1]) : null;
-      if (/<(canvas|script)\b/i.test(t)) c.score += 10;
+      // Big single-file games embed megabytes of data; their <title> is near the top.
+      var t = c.size > 8 * 1024 * 1024 ? await K.readHTMLText(c.file.slice(0, 512 * 1024)) : await K.readHTMLText(c.file);
+      if (c.size <= 8 * 1024 * 1024) texts[c.path] = t;
+      var sc = scanHTML(t);
+      c.scan = sc;
+      c.title = sc.title ? cleanTitle(sc.title) : null;
+      if (sc.hasCode) c.score += 10;
       var dir = K.runtimeHelpers.dirOf(c.path);
-      var redir = /<meta[^>]+http-equiv\s*=\s*["']?refresh[^>]+content\s*=\s*["'][^"']*url\s*=\s*([^"'>\s]+)/i.exec(t) ||
-        (t.length < 4000 ? /(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+\.html?)["']/i.exec(t) : null);
-      if (redir) {
-        var target = findRef(files, redir[1], dir);
+      var redirUrl = sc.refresh || (t.length < 4000 ? (/(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+\.html?)["']/i.exec(t) || [])[1] : null);
+      if (redirUrl) {
+        var target = findRef(files, redirUrl, dir);
         var tc = target && cands.find(function (x) { return x.path === target; });
         if (tc) { tc.score += 45; c.score -= 30; }
       }
@@ -159,6 +184,7 @@ K.analyze = (function () {
     var entryText = texts[entry];
     if (entryText == null) entryText = await K.readHTMLText(entryCand.file);
     var entryDir = K.runtimeHelpers.dirOf(entry);
+    var entryScan = entryCand.scan && entryCand.size <= 8 * 1024 * 1024 ? entryCand.scan : scanHTML(entryText);
 
     info.title = (typeof meta.title === 'string' && meta.title.trim()) || entryCand.title || K.prettyName(pkg.name);
 
@@ -171,17 +197,14 @@ K.analyze = (function () {
     if (meta.cover) { cover = findRef(files, meta.cover, ''); if (!cover) warnings.push('kerf.json names a cover image that does not exist: ' + meta.cover); }
     if (!cover && images.length && images[0].score >= 15) cover = images[0].path;
     if (!cover) {
-      var og = /<meta[^>]+(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["'][^>]*content\s*=\s*["']([^"']+)/i.exec(entryText) ||
-        /<link[^>]+rel\s*=\s*["'][^"']*(?:apple-touch-icon|icon)[^"']*["'][^>]*href\s*=\s*["']([^"']+)/i.exec(entryText);
-      if (og) cover = findRef(files, og[1], entryDir);
+      var og = entryScan.image || entryScan.icon;
+      if (og) cover = findRef(files, og, entryDir);
       if (cover && !K.isImage(cover)) cover = null;
     }
     info.cover = cover;
 
     // Things that will not work offline
-    var hosts = {}, re = /<(?:script|link)\b[^>]*\b(?:src|href)\s*=\s*["']?(?:https?:)?\/\/([^\/"'\s>]+)/gi, m;
-    while ((m = re.exec(entryText))) hosts[m[1].toLowerCase()] = 1;
-    info.external = Object.keys(hosts);
+    info.external = Object.keys(entryScan.hosts);
     if (info.external.length) warnings.push('This game loads code from the internet (' + info.external.slice(0, 2).join(', ') + '). Parts of it may not work offline.');
     if (/SharedArrayBuffer|crossOriginIsolated/.test(entryText)) warnings.push('This game may require cross-origin isolation, which browsers only allow on web servers.');
 

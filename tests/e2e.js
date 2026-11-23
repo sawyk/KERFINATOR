@@ -92,6 +92,14 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await row('Tiny Single File').locator('.imp-msg.ok').waitFor({ timeout: 15000 });
   ok(true, '"Add all" imports .zip and single .html');
 
+  await page.setInputFiles('#in-files', [path.join(FX, 'singles', 'self-writer.html'), path.join(FX, 'singles', 'big-single.html')]);
+  await row('Big Single File').waitFor({ timeout: 15000 });
+  ok(true, 'title found in a single-file game larger than 8 MB');
+  ok((await row('Self Writer').count()) === 1, 'several .html files picked together become separate games');
+  await page.click('#import-all');
+  await row('Big Single File').locator('.imp-msg.ok').waitFor({ timeout: 20000 });
+  await row('Self Writer').locator('.imp-msg.ok').waitFor({ timeout: 20000 });
+
   await importFolder(path.join(FX, 'ambiguous'));
   const amb = page.locator('.imp.is-choose');
   await amb.waitFor({ timeout: 10000 });
@@ -150,7 +158,7 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   await page.click('.tab[data-view=library]');
   const total = await page.locator('#grid .card').count();
   const HAS_PHASER = fs.existsSync(path.join(FX, 'phaser-game'));
-  const TOTAL = HAS_PHASER ? 13 : 12;
+  const TOTAL = HAS_PHASER ? 15 : 14;
   ok(total === TOTAL, 'library contains all games', total);
 
   /* ------------------------------------------------------------ */
@@ -163,11 +171,13 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   }
   let gp = await launch('Kitchen Sink Test');
   let T = await gp.evaluate(() => window.__T);
-  ok(T && Object.keys(T).length >= 22, 'kitchen sink ran all checks', T && Object.keys(T).length);
+  ok(T && Object.keys(T).length >= 23, 'kitchen sink ran all checks', T && Object.keys(T).length);
   for (const [k, v] of Object.entries(T || {})) ok(v === 'ok', 'kitchen: ' + k, v);
   ok(/\?play=g[0-9a-f]{12}&s=/.test(gp.url()), 'game runs in a separate tab with its own URL');
   ok(await gp.evaluate(() => !document.getElementById('app') && !document.querySelector('.top')), 'no launcher UI around the game');
   ok(await gp.evaluate(() => document.fullscreenEnabled), 'game tab can use fullscreen');
+  await gp.waitForTimeout(1600);
+  ok((await gp.locator('kerf-notice').count()) === 0, 'deliberate probes for missing files (404) raise no warning');
   const kitchenId = new URL(gp.url()).searchParams.get('play');
   await gp.reload();
   await gp.waitForFunction(() => window.__DONE, null, { timeout: 15000 }).catch(() => {});
@@ -187,7 +197,8 @@ const fileUrl = (p) => 'file://' + p.split(path.sep).map(encodeURIComponent).joi
   for (const [k, v] of Object.entries(T || { modules: 'did not run' })) ok(v === 'ok', 'modules: ' + k, v);
   await gp.close();
 
-  for (const [title, check] of [['Nested Zip Game', (t) => t.zipScript === 'ok' && t.unicodeNames === 'ok'], ['Tiny Single File', (t) => t.single === 'ok'], ['Beta', (t) => t.page === 'beta'], ['Collection Two', (t) => t.c === 'two'], ['Dropped Game', (t) => t.drop === 'ok']]) {
+  await page.waitForTimeout(10);
+  for (const [title, check] of [['Self Writer', (t) => t.selfWriter === 'ok'], ['Big Single File', (t) => t.big === 'ok'], ['Nested Zip Game', (t) => t.zipScript === 'ok' && t.unicodeNames === 'ok'], ['Tiny Single File', (t) => t.single === 'ok'], ['Beta', (t) => t.page === 'beta'], ['Collection Two', (t) => t.c === 'two'], ['Dropped Game', (t) => t.drop === 'ok']]) {
     gp = await launch(title);
     ok(check((await gp.evaluate(() => window.__T)) || {}), 'launch: ' + title);
     await gp.close();

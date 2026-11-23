@@ -85,6 +85,7 @@ fetch('../data/info.json').then(r => r.json()).then(j => postMessage({ helper: s
   function loaded(el) { return new Promise(function (res, rej) { if (el.complete && el.naturalWidth) return res(); el.onload = res; el.onerror = function () { rej(new Error('load error ' + el.src)); }; }); }
   check('fetch', function () { return fetch('data/info.json').then(function (r) { return r.json(); }).then(function (j) { return j.ok === true; }); });
   check('fetchCaseInsensitive', function () { return fetch('DATA/Info.JSON').then(function (r) { return r.ok; }); });
+  check('xhrMissing404', function () { return new Promise(function (res) { var x = new XMLHttpRequest(); x.open('GET', 'saves/slot1.ini'); x.onload = function () { res(x.status === 404 || x.status); }; x.onerror = function () { res('xhr error instead of 404'); }; x.send(); }); });
   check('fetchMissing404', function () { return fetch('data/missing.json').then(function (r) { return r.status === 404 || r.status; }); });
   check('fetchLocationRelative', function () { return fetch(new URL('data/info.json', location.href)).then(function (r) { return r.ok; }); });
   check('fetchFromScriptDir', function () { return fetch(scriptDir + '../data/info.json').then(function (r) { return r.ok || scriptDir; }); });
@@ -175,6 +176,17 @@ Promise.all([new Promise(function (r) { if (im.complete) r(im.naturalWidth > 0);
 
   /* 6. Single self-contained HTML file */
   w(path.join(root, 'tiny-game.html'), '<!DOCTYPE html><html><head><title>Tiny Single File</title></head><body><canvas></canvas><script>window.__T={single:"ok"};window.__DONE=true;</script></body></html>');
+
+  /* 6a. Single files that rebuild themselves with document.write (like Ruffle/JSZip
+     packs): the page has no <head> of its own, only one inside a JS string. */
+  w(path.join(root, 'singles/self-writer.html'), `<html>
+<script>
+var page = "<html lang=\\"en\\">\\r\\n<head>\\r\\n<title>inner</title>\\r\\n</head>\\r\\n<body><div id=\\"inner\\">ok</div><script>window.__DONE=true;window.__T={selfWriter:document.getElementById('inner')?'ok':'FAIL'};<\\/script></body></html>";
+setTimeout(function () { document.open(); document.write(page); document.close(); }, 10);
+</script>
+</html>`);
+  // A big single-file game (> 8 MB of embedded data) whose title must still be found.
+  w(path.join(root, 'singles/big-single.html'), '<!DOCTYPE html><html><head><title>Big Single File</title></head><body><script>window.__T={big:"ok"};window.__DONE=true;</script><!--' + 'x'.repeat(9 * 1024 * 1024) + '--></body></html>');
 
   /* 6b. A newer version of the single-file game (same title, different content) */
   w(path.join(root, 'tiny-v2/tiny-game.html'), '<!DOCTYPE html><html><head><title>Tiny Single File</title></head><body><script>window.__T={single:"ok",version:2};window.__DONE=true;</script></body></html>');

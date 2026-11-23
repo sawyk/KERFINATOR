@@ -137,7 +137,9 @@ function KERF_RUNTIME(C, MODE) {
      DOM re-serialisation, so odd-but-working markup survives intact) and
      only touches resource attributes and raw-text element contents.
      hooks.tag(tag, attrs) may return false to drop a tag, or mutate attrs.
-     hooks.raw(tag, attrs, content) returns replacement raw-text content. */
+     hooks.raw(tag, attrs, content) returns replacement raw-text content.
+     hooks.after(tag, outLength) reports where each real tag ends in the
+     output (tags inside scripts, styles and comments are never seen). */
   function rewriteHTML(html, fromDir, mapFn, hooks) {
     hooks = hooks || {};
     var out = '', pos = 0, n = html.length;
@@ -200,6 +202,7 @@ function KERF_RUNTIME(C, MODE) {
       }
       rebuilt += (selfClose ? ' />' : '>');
       out += rebuilt;
+      if (hooks.after) hooks.after(tag, out.length, attrs);
       if (content !== null) { out += content + '</' + m[2] + '>'; pos = afterClose; }
     }
     return out;
@@ -245,11 +248,19 @@ function KERF_RUNTIME(C, MODE) {
   var BLOB2PATH = Object.create(null);
   for (var fk in FILES) if (hasOwn.call(FILES, fk)) BLOB2PATH[FILES[fk]] = fk;
   var UUID_BLOB = /^blob:.*\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:#.*)?$/i;
-  var missing = [], missingSeen = Object.create(null);
+  /* Missing files come in two kinds. A page, stylesheet or element that
+     references a file that isn't there is a real breakage (critical). A
+     fetch/XHR for a file that doesn't exist is usually deliberate: engines
+     probe for save files and optional configs, and wrappers point dead
+     analytics at dummy URLs. Those get a normal 404 and no warning. */
+  var missing = [], probed = [], missingSeen = Object.create(null);
   var onMissing = null;
-  function noteMissing(p) {
-    if (missingSeen[p]) return;
-    missingSeen[p] = 1; missing.push(p);
+  function noteMissing(p, probe) {
+    var key = (probe ? 'p:' : 'c:') + p;
+    if (missingSeen[key]) return;
+    missingSeen[key] = 1;
+    if (probe) { probed.push(p); return; }
+    missing.push(p);
     try { console.warn('[KERFINATOR] Missing game file: ' + p); } catch (e) {}
     if (onMissing) onMissing(p);
   }
@@ -273,12 +284,12 @@ function KERF_RUNTIME(C, MODE) {
     }
     return staticRef(s, bd);
   }
-  function resolveUrl(url, baseDir) {
+  function resolveUrl(url, baseDir, probe) {
     if (url == null) return null;
     var r = gamePathOf(url, baseDir);
     if (!r) return null;
     var real = lookup(r.path);
-    if (real == null) { noteMissing(r.path); return { missing: r.path }; }
+    if (real == null) { noteMissing(r.path, probe); return { missing: r.path }; }
     return { url: FILES[real] + (r.hash || ''), path: real };
   }
   function mapUrl(url, baseDir) {
@@ -295,7 +306,7 @@ function KERF_RUNTIME(C, MODE) {
     G.fetch = function (input, init) {
       try {
         var isReq = typeof Request !== 'undefined' && input instanceof Request;
-        var r = resolveUrl(isReq ? input.url : (input && input.href) || input);
+        var r = resolveUrl(isReq ? input.url : (input && input.href) || input, undefined, true);
         if (r) {
           if (r.missing) return Promise.resolve(new Response('Not found: ' + r.missing, { status: 404, statusText: 'Not Found' }));
           var method = (init && init.method) || (isReq ? input.method : 'GET');
@@ -315,13 +326,28 @@ function KERF_RUNTIME(C, MODE) {
   /* ---- XMLHttpRequest ---- */
   if (G.XMLHttpRequest) {
     var oXOpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function (method, url) {
+    var XP = XMLHttpRequest.prototype, oXSend = XP.send, emptyUrl = null;
+    XP.open = function (method, url) {
       var args = Array.prototype.slice.call(arguments);
+      this.__kerf404 = false;
       try {
-        var r = resolveUrl(url);
+        var r = resolveUrl(url && url.href ? url.href : url, undefined, true);
         if (r && r.url) { args[1] = r.url; if (/^head$/i.test(method)) args[0] = 'GET'; }
+        else if (r && r.missing) {
+          // A file the game asks for that isn't part of it: answer like a web
+          // server would (404), instead of a blocked file:// request.
+          if (!emptyUrl) emptyUrl = URL.createObjectURL(new Blob([]));
+          args[0] = 'GET'; args[1] = emptyUrl; this.__kerf404 = true;
+        }
       } catch (e) {}
       return oXOpen.apply(this, args);
+    };
+    XP.send = function () {
+      if (this.__kerf404) {
+        Object.defineProperty(this, 'status', { configurable: true, get: function () { return this.readyState >= 2 ? 404 : 0; } });
+        Object.defineProperty(this, 'statusText', { configurable: true, get: function () { return this.readyState >= 2 ? 'Not Found' : ''; } });
+      }
+      return oXSend.apply(this, arguments);
     };
   }
 
@@ -706,7 +732,7 @@ function KERF_RUNTIME(C, MODE) {
     if (!realLS) return;
     try {
       realLS.setItem('kerf:diag:' + C.gameId, JSON.stringify({
-        t: Date.now(), missing: missing.slice(0, 20), errors: errors.slice(0, 5), external: external.slice(0, 5), fatal: fatal
+        t: Date.now(), missing: missing.slice(0, 20), probed: probed.slice(0, 20), errors: errors.slice(0, 5), external: external.slice(0, 5), fatal: fatal
       }));
     } catch (e) {}
   }

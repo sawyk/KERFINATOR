@@ -2,7 +2,7 @@
    To change the games, edit the games folder and run "Build USB library" again. */
 KERFINATOR_CATALOG({
  "format": 1,
- "generated": "2026-11-23T17:03:11.026Z",
+ "generated": "2026-11-23T19:07:54.700Z",
  "games": [
   {
    "key": "core-breach",

@@ -42,10 +42,10 @@ This is injected as the first script of every game page (and into its Workers). 
 
 ### Verified (automated test suite)
 
-`npm test` runs `tests/e2e.js` on real Chromium against `file://` with the network blocked. **104 checks** cover:
+`npm test` runs `tests/e2e.js` on real Chromium against `file://` with the network blocked. **110 checks** cover:
 
 - Zero-click USB install.
-- Import of folders, `.zip` archives (nested wrapper folder, Unicode names), single `.html` files, drag-and-drop and folder collections.
+- Import of folders, `.zip` archives (nested wrapper folder, Unicode names), single `.html` files (including several picked at once, and self-unpacking single-file packs over 8 MB), drag-and-drop and folder collections.
 - Start-page and cover detection, ambiguous start pages, invalid folders, duplicates, unreadable files, and updating a game in place.
 - Launching in a separate tab, and reload.
 - Every loading path above, including WebGL textures, Web Audio, WASM streaming, workers with `importScripts`, ES modules with import maps and dynamic imports, gzip builds, and links between game pages.

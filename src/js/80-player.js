@@ -99,31 +99,37 @@ K.player = (function () {
     status('Preparing game…');
     var html = await K.readHTMLText(rec[entry].b);
     var entryDir = H.dirOf(entry), docDir = entryDir;
-    var baseM = /<base\b[^>]*\bhref\s*=\s*["']?([^"'\s>]+)/i.exec(html);
-    if (baseM && !/^[a-z]+:/i.test(baseM[1])) {
-      var br = H.staticRef(/\/$/.test(baseM[1]) ? baseM[1] + 'x' : baseM[1], entryDir);
-      if (br) docDir = H.dirOf(br.path);
-    }
     var modules = Object.create(null), queue = [], gameMap = null;
     function addModule(ref, fromDir, anyRelative) {
       if (!anyRelative && !/^(?:\.{1,2}\/|\/|kerf:)/.test(ref)) return;
       var r = H.staticRef(ref, fromDir), real = r && H.lookup(r.path);
       if (real && !(real in modules)) { modules[real] = null; queue.push(real); }
     }
+    // Scan real tags only (never text inside scripts, which may contain HTML strings).
+    var baseHref = null, moduleSrcs = [], inlineSpecs = [];
     H.rewriteHTML(html, docDir, function () { return null; }, {
       tag: function (tag, attrs) {
-        if (tag === 'script' && /^module$/i.test(attr(attrs, 'type') || '') && attr(attrs, 'src')) addModule(attr(attrs, 'src'), docDir, true);
-        if (tag === 'link' && /modulepreload/i.test(attr(attrs, 'rel') || '') && attr(attrs, 'href')) addModule(attr(attrs, 'href'), docDir, true);
+        if (tag === 'base' && baseHref === null && attr(attrs, 'href')) baseHref = attr(attrs, 'href');
+        if (tag === 'script' && /^module$/i.test(attr(attrs, 'type') || '') && attr(attrs, 'src')) moduleSrcs.push(attr(attrs, 'src'));
+        if (tag === 'link' && /modulepreload/i.test(attr(attrs, 'rel') || '') && attr(attrs, 'href')) moduleSrcs.push(attr(attrs, 'href'));
         return true;
       },
       raw: function (tag, attrs, content) {
         if (tag !== 'script') return null;
         var t = (attr(attrs, 'type') || '').toLowerCase();
-        if (t === 'module') specsOf(content).forEach(function (s) { addModule(s, docDir); });
+        if (t === 'module') inlineSpecs = inlineSpecs.concat(specsOf(content));
         if (t === 'importmap') { try { gameMap = JSON.parse(content); } catch (e) {} }
         return null;
       }
     });
+    // A relative <base href> moves where the page's own references point.
+    // An absolute one (often a CDN) is dropped: the files are stored locally.
+    if (baseHref && !/^[a-z][a-z0-9+.\-]*:|^\/\//i.test(baseHref)) {
+      var br = H.staticRef(/\/$/.test(baseHref) ? baseHref + 'x' : baseHref, entryDir);
+      if (br) docDir = H.dirOf(br.path);
+    }
+    moduleSrcs.forEach(function (s) { addModule(s, docDir, true); });
+    inlineSpecs.forEach(function (s) { addModule(s, docDir); });
     if (gameMap && gameMap.imports) Object.keys(gameMap.imports).forEach(function (k) {
       var v = String(gameMap.imports[k]);
       if (/\/$/.test(v)) {
@@ -190,7 +196,12 @@ K.player = (function () {
 
     // 6. Rewrite the start page
     var inlineFrom = docDir + entry.split('/').pop();
+    var headEnd = -1, htmlEnd = -1;
     var out = H.rewriteHTML(html, docDir, mapRef, {
+      after: function (tag, pos) {
+        if (tag === 'head' && headEnd < 0) headEnd = pos;
+        if (tag === 'html' && htmlEnd < 0) htmlEnd = pos;
+      },
       tag: function (tag, attrs) {
         if (tag === 'base') return false;
         if (tag === 'meta' && /content-security-policy/i.test(attr(attrs, 'http-equiv') || '')) return false;
@@ -216,8 +227,11 @@ K.player = (function () {
     if (Object.keys(importMap.imports).length) {
       inject += SCRIPT_OPEN + ' type="importmap">' + JSON.stringify(importMap).replace(/</g, '\\u003c') + SCRIPT_CLOSE;
     }
-    var hm = /<head\b[^>]*>/i.exec(out) || /<html\b[^>]*>/i.exec(out) || /<!doctype[^>]*>/i.exec(out);
-    out = hm ? out.slice(0, hm.index + hm[0].length) + inject + out.slice(hm.index + hm[0].length) : inject + out;
+    // Inject right after the real <head> (or <html>, or the doctype), so the
+    // runtime runs before any of the game's own scripts.
+    var at = headEnd >= 0 ? headEnd : htmlEnd;
+    if (at < 0) { var dm = /^\s*<!doctype[^>]*>/i.exec(out); at = dm ? dm[0].length : 0; }
+    out = out.slice(0, at) + inject + out.slice(at);
 
     status('Starting…');
     document.open();
